@@ -125,23 +125,37 @@ function buildFallbackExplanation(results) {
   return `This case was rejected because the verification checks produced a high overall risk score of ${results.riskScore}/100 and the evidence is not strong enough for approval. Manual compliance escalation is required before any onboarding action is taken.`
 }
 
+function calculateDocumentAuthenticityRisk(documentResult, supportingSignals = {}) {
+  let risk = 0
+  const documentConfidence = Number(documentResult.confidenceScore) || 0
+  const hasStrongSupport =
+    (supportingSignals.dataConsistencyRisk || 0) === 0 &&
+    (supportingSignals.faceMatchRisk || 0) === 0 &&
+    (supportingSignals.livenessRisk || 0) === 0
+
+  if (documentResult.tamperingDetected === true) {
+    return 30
+  }
+
+  if (documentResult.isAuthentic === false) {
+    if (hasStrongSupport && documentConfidence >= 35) return 8
+    if (documentConfidence >= 70) return 8
+    if (documentConfidence >= 50) return 15
+    return 22
+  }
+
+  if (hasStrongSupport && documentConfidence >= 35) return 0
+
+  if (documentConfidence < 45) risk += 10
+  else if (documentConfidence < 65) risk += 5
+
+  return risk
+}
+
 function calculateLocalResults(kycData) {
   const documentResult = kycData.documentResult || {}
   const faceResult = kycData.faceResult || {}
   const customerInfo = kycData.customerInfo || {}
-
-  let documentAuthenticityRisk = 0
-  const documentConfidence = Number(documentResult.confidenceScore) || 0
-  if (documentResult.tamperingDetected === true) {
-    documentAuthenticityRisk = 30
-  } else if (documentResult.isAuthentic === false) {
-    if (documentConfidence >= 70) documentAuthenticityRisk = 8
-    else if (documentConfidence >= 50) documentAuthenticityRisk = 15
-    else documentAuthenticityRisk = 22
-  } else {
-    if (documentConfidence < 45) documentAuthenticityRisk += 10
-    else if (documentConfidence < 65) documentAuthenticityRisk += 5
-  }
 
   const matchScore = Number(faceResult.matchScore) || 0
   let faceMatchRisk = 30
@@ -191,6 +205,12 @@ function calculateLocalResults(kycData) {
     if (confidence < 60) livenessRisk = 7
     else if (confidence < 80) livenessRisk = 3
   }
+
+  const documentAuthenticityRisk = calculateDocumentAuthenticityRisk(documentResult, {
+    dataConsistencyRisk,
+    faceMatchRisk,
+    livenessRisk
+  })
 
   const riskScore = Math.min(100, Math.round(
     documentAuthenticityRisk +
@@ -283,6 +303,12 @@ function getDocumentConfidenceLabel(score) {
   return 'Low'
 }
 
+function getDocumentGenuinenessLabel(documentResult, results) {
+  if (documentResult.tamperingDetected === true) return 'Suspicious'
+  if ((results.breakdown?.documentAuthenticityRisk || 0) >= 15) return 'Needs Review'
+  return 'Document Appears Genuine'
+}
+
 export default function Step4_Results({ kycData, updateKycData, resetKycData }) {
   const navigate = useNavigate()
   const hasFetchedRef = useRef(false)
@@ -359,6 +385,7 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
   const nameMatchLabel = getNameMatchLabel(kycData.customerInfo, kycData.documentResult)
   const idNumberMatchLabel = getIdNumberMatchLabel(kycData.customerInfo, kycData.documentResult)
   const documentConfidenceLabel = getDocumentConfidenceLabel(kycData.documentResult.confidenceScore)
+  const documentGenuinenessLabel = getDocumentGenuinenessLabel(kycData.documentResult, results)
 
   return (
     <StepCanvas currentStep={4}>
@@ -478,8 +505,8 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
               </div>
               <div>
                 <p className="text-xs text-gray-500">Document Genuineness</p>
-                <p className={`font-medium ${kycData.documentResult.isAuthentic ? 'text-green-600' : 'text-red-600'}`}>
-                  {kycData.documentResult.isAuthentic ? 'Document Appears Genuine' : 'Suspicious'}
+                <p className={`font-medium ${documentGenuinenessLabel === 'Document Appears Genuine' ? 'text-green-600' : documentGenuinenessLabel === 'Needs Review' ? 'text-amber-600' : 'text-red-600'}`}>
+                  {documentGenuinenessLabel}
                 </p>
               </div>
               <div>

@@ -1,9 +1,13 @@
 function calculateRiskScore(documentResult, faceResult, customerInfo) {
-  const documentAuthenticityRisk = calcDocumentRisk(documentResult)
-  const faceMatchRisk = calcFaceMatchRisk(faceResult)
-  const expiryRisk = calcExpiryRisk(documentResult)
   const dataConsistencyRisk = calcDataConsistencyRisk(customerInfo, documentResult)
+  const faceMatchRisk = calcFaceMatchRisk(faceResult)
   const livenessRisk = calcLivenessRisk(faceResult)
+  const documentAuthenticityRisk = calcDocumentRisk(documentResult, {
+    dataConsistencyRisk,
+    faceMatchRisk,
+    livenessRisk
+  })
+  const expiryRisk = calcExpiryRisk(documentResult)
 
   const riskScore = Math.min(100, Math.round(
     documentAuthenticityRisk +
@@ -51,17 +55,24 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
   }
 }
 
-function calcDocumentRisk(documentResult) {
+function calcDocumentRisk(documentResult, supportingSignals = {}) {
   let risk = 0
   if (documentResult.tamperingDetected === true) return 30
 
   const confidence = Number(documentResult.confidenceScore) || 0
+  const hasStrongSupport =
+    (supportingSignals.dataConsistencyRisk || 0) === 0 &&
+    (supportingSignals.faceMatchRisk || 0) === 0 &&
+    (supportingSignals.livenessRisk || 0) === 0
 
   if (documentResult.isAuthentic === false) {
+    if (hasStrongSupport && confidence >= 35) return 8
     if (confidence >= 70) return 8
     if (confidence >= 50) return 15
     return 22
   }
+
+  if (hasStrongSupport && confidence >= 35) return 0
 
   if (confidence < 45) risk += 10
   else if (confidence < 65) risk += 5
