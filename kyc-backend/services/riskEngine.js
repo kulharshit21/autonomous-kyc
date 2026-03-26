@@ -1,4 +1,5 @@
 function calculateRiskScore(documentResult, faceResult, customerInfo) {
+  const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
   const dataConsistencyRisk = calcDataConsistencyRisk(customerInfo, documentResult)
   const faceMatchRisk = calcFaceMatchRisk(faceResult)
   const livenessRisk = calcLivenessRisk(faceResult)
@@ -9,13 +10,19 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
   })
   const expiryRisk = calcExpiryRisk(documentResult)
 
-  const riskScore = Math.min(100, Math.round(
+  let riskScore = Math.min(100, Math.round(
     documentAuthenticityRisk +
     faceMatchRisk +
     expiryRisk +
     dataConsistencyRisk +
     livenessRisk
   ))
+
+  if (dataConsistencyRisk >= 12) {
+    riskScore = Math.max(riskScore, 55)
+  } else if (dataConsistencyRisk >= 8) {
+    riskScore = Math.max(riskScore, 40)
+  }
 
   let riskCategory
   let decision
@@ -39,6 +46,12 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
   if (documentAuthenticityRisk >= 15 && decision === 'approved') {
     riskCategory = 'medium'
     decision = 'review'
+  }
+
+  if (identityMismatchCount > 2) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
   }
 
   return {
@@ -194,6 +207,30 @@ function calcDataConsistencyRisk(customerInfo, documentResult) {
   }
 
   return Math.min(15, risk)
+}
+
+function countIdentityMismatches(customerInfo, documentResult) {
+  let mismatches = 0
+
+  const enteredName = customerInfo.fullName || ''
+  const extractedName = documentResult.extractedName || ''
+  if (enteredName && extractedName && getNameMismatchRisk(enteredName, extractedName) >= 8) {
+    mismatches += 1
+  }
+
+  const enteredDOB = normaliseDate(customerInfo.dateOfBirth)
+  const extractedDOB = normaliseDate(documentResult.extractedDOB)
+  if (enteredDOB && extractedDOB && enteredDOB !== extractedDOB) {
+    mismatches += 1
+  }
+
+  const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
+  const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
+  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
+    mismatches += 1
+  }
+
+  return mismatches
 }
 
 function calcLivenessRisk(faceResult) {

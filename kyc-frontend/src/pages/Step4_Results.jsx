@@ -109,6 +109,30 @@ function getIdNumberMatchLabel(customerInfo, documentResult) {
   return enteredIdNumber === extractedIdNumber ? 'Yes' : 'No'
 }
 
+function countIdentityMismatches(customerInfo, documentResult) {
+  let mismatches = 0
+
+  const enteredName = customerInfo.fullName || ''
+  const extractedName = documentResult.extractedName || ''
+  if (enteredName && extractedName && getNameMismatchRisk(enteredName, extractedName) >= 8) {
+    mismatches += 1
+  }
+
+  const enteredDob = normaliseDate(customerInfo.dateOfBirth)
+  const extractedDob = normaliseDate(documentResult.extractedDOB)
+  if (enteredDob && extractedDob && enteredDob !== extractedDob) {
+    mismatches += 1
+  }
+
+  const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
+  const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
+  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
+    mismatches += 1
+  }
+
+  return mismatches
+}
+
 function buildFallbackExplanation(results) {
   if (results.decision === 'approved') {
     return `This case was approved because the document, face match, and liveness checks produced a low overall risk score of ${results.riskScore}/100. Standard onboarding can proceed without extra review.`
@@ -156,6 +180,7 @@ function calculateLocalResults(kycData) {
   const documentResult = kycData.documentResult || {}
   const faceResult = kycData.faceResult || {}
   const customerInfo = kycData.customerInfo || {}
+  const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
 
   const matchScore = Number(faceResult.matchScore) || 0
   let faceMatchRisk = 30
@@ -212,13 +237,19 @@ function calculateLocalResults(kycData) {
     livenessRisk
   })
 
-  const riskScore = Math.min(100, Math.round(
+  let riskScore = Math.min(100, Math.round(
     documentAuthenticityRisk +
     faceMatchRisk +
     expiryRisk +
     dataConsistencyRisk +
     livenessRisk
   ))
+
+  if (dataConsistencyRisk >= 12) {
+    riskScore = Math.max(riskScore, 55)
+  } else if (dataConsistencyRisk >= 8) {
+    riskScore = Math.max(riskScore, 40)
+  }
 
   let riskCategory = 'medium'
   let decision = 'review'
@@ -240,10 +271,17 @@ function calculateLocalResults(kycData) {
     decision = 'review'
   }
 
+  if (identityMismatchCount > 2) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
   const base = {
     riskScore,
     riskCategory,
     decision,
+    documentConfidenceScore: Number(documentResult.confidenceScore) || 0,
     breakdown: {
       documentAuthenticityRisk,
       faceMatchRisk,
@@ -309,16 +347,37 @@ function calculateOverallVerificationConfidence(results) {
   const faceRisk = results.breakdown?.faceMatchRisk || 0
   const consistencyRisk = results.breakdown?.dataConsistencyRisk || 0
   const livenessRisk = results.breakdown?.livenessRisk || 0
+  const documentConfidence = Number(results.documentConfidenceScore) || 0
 
-  let confidence = 100 - riskScore
+  const documentStrength = documentConfidence
+  const consistencyStrength = Math.max(0, 100 - Math.round((consistencyRisk / 15) * 100))
+  const faceStrength = Math.max(0, 100 - Math.round((faceRisk / 30) * 100))
+  const livenessStrength = Math.max(0, 100 - Math.round((livenessRisk / 10) * 100))
+  const riskStrength = Math.max(0, 100 - riskScore)
 
-  if (consistencyRisk === 0) confidence += 4
-  if (faceRisk === 0) confidence += 4
-  if (livenessRisk === 0) confidence += 3
-  if (documentRisk === 0) confidence += 4
-  else if (documentRisk <= 8) confidence += 1
+  let confidence = Math.round(
+    (documentStrength * 0.2) +
+    (consistencyStrength * 0.45) +
+    (faceStrength * 0.15) +
+    (livenessStrength * 0.1) +
+    (riskStrength * 0.1)
+  )
 
-  if (results.decision === 'approved') confidence = Math.max(confidence, 88)
+  if (consistencyRisk >= 12) confidence = Math.min(confidence, 20)
+  else if (consistencyRisk >= 10) confidence = Math.min(confidence, 28)
+  else if (consistencyRisk >= 8) confidence = Math.min(confidence, 38)
+  else if (consistencyRisk > 0) confidence = Math.min(confidence, 68)
+
+  if (documentRisk >= 15) confidence = Math.min(confidence, 55)
+  else if (documentRisk > 0) confidence = Math.min(confidence, Math.max(documentConfidence + 10, 70))
+
+  if (documentConfidence < 50) confidence = Math.min(confidence, 78)
+  else if (documentConfidence < 60) confidence = Math.min(confidence, 84)
+
+  if (results.decision === 'approved' && consistencyRisk === 0 && faceRisk === 0 && livenessRisk === 0) {
+    confidence = Math.max(confidence, Math.min(96, Math.max(documentConfidence, 88)))
+  }
+
   if (results.decision === 'review') confidence = Math.min(confidence, 74)
   if (results.decision === 'rejected') confidence = Math.min(confidence, 45)
 
@@ -373,6 +432,7 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
           riskCategory: data.riskCategory || localResults.riskCategory,
           decision: data.decision || localResults.decision,
           explanation: data.explanation || localResults.explanation,
+          documentConfidenceScore: Number(kycData.documentResult.confidenceScore) || localResults.documentConfidenceScore,
           breakdown: data.breakdown || localResults.breakdown
         }
 
