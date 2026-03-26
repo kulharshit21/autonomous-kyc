@@ -20,6 +20,8 @@ Return ONLY a valid JSON object with exactly these fields and no additional text
   "idNumber": "string",
   "address": "string",
   "expiryDate": "string in DD/MM/YYYY format or 'No Expiry'",
+  "hasPhotoInId": "boolean",
+  "idPhotoClarity": "one of clear, slightly_unclear, unclear, no_photo",
   "isAuthentic": "boolean",
   "tamperingDetected": "boolean",
   "confidenceScore": "integer from 0 to 100",
@@ -31,6 +33,8 @@ Rules:
 - If one image is unclear but another is clearer, prefer the clearer image.
 - Extract the full legal name exactly as visible on the document, including middle names and surnames when present.
 - For passports, identify the document as "Passport" when appropriate and extract the passport number, full name, date of birth, and expiry date from the passport identity page or MRZ.
+- Set hasPhotoInId to true when any provided image contains the holder's portrait photo on the ID.
+- If the uploaded image is only text, back side only, or has no visible portrait, set hasPhotoInId to false and idPhotoClarity to no_photo.
 - Mark "isAuthentic" as false only when there is a strong reason to suspect forgery, tampering, manipulation, or a clearly invalid document.
 - If the document looks real but the image quality is weak, keep "isAuthentic" as true and explain the quality issue in "authenticityReason" instead of calling it fake or suspicious.
 - Use an empty string only when the information is genuinely not visible in any provided image.
@@ -63,8 +67,63 @@ Scoring rules:
 - 75 to 89: likely same person with minor uncertainty
 - 50 to 74: possible match but noticeable uncertainty
 - 0 to 49: weak match or likely different person
+- Do not treat "both images contain a face" as evidence of a match by itself.
+- Compare actual facial similarity such as face shape, eye spacing, nose, mouth, jawline, and overall resemblance.
+- Allow for reasonable differences caused by lighting, angle, camera quality, expression, and minor age variation.
+- If the selfie belongs to a different person, keep matchScore low even if both faces are clearly visible and the selfie is live.
+- Set verificationPassed to true only when the same-person evidence is genuinely strong.
 
 Compute each score from the actual images. Do not copy placeholder values from the schema.`
+
+const PROMPT_G003 = `You are performing a strict second-pass audit of a KYC face comparison.
+
+You have been provided:
+- Image 1: a government ID document that contains a printed ID portrait
+- Image 2: a live selfie captured during verification
+
+Your job is to be conservative.
+
+Return ONLY a valid JSON object with exactly these fields and no additional text:
+
+{
+  "strictMatchScore": "integer from 0 to 100",
+  "samePersonConfidence": "integer from 0 to 100",
+  "idPhotoClarity": "one of clear, slightly_unclear, unclear, too_small",
+  "selfieClarity": "one of clear, slightly_unclear, unclear",
+  "shouldTreatAsUncertain": "boolean",
+  "reasoning": "string"
+}
+
+Rules:
+- Focus on the actual printed ID portrait, not the whole card layout.
+- If the ID portrait is tiny, blurry, compressed, shadowed, cropped, or unclear, mark idPhotoClarity as unclear or too_small.
+- If the evidence is weak, prefer shouldTreatAsUncertain = true instead of overconfident matching.
+- Only give strictMatchScore above 80 when the same-person evidence is genuinely strong.
+- If the faces could plausibly be different people, keep strictMatchScore below 65.
+- Use face shape, eyes, nose, mouth, jawline, hairline, and overall resemblance.`
+
+const PROMPT_G004 = `You are performing a feature-by-feature facial similarity review for KYC.
+
+You have:
+- Image 1: an ID document containing the printed portrait of the ID holder
+- Image 2: a live selfie
+
+Return ONLY a valid JSON object with exactly these fields and no additional text:
+
+{
+  "samePersonLikelihood": "integer from 0 to 100",
+  "featureAgreementCount": "integer from 0 to 6",
+  "featureMismatchCount": "integer from 0 to 6",
+  "shouldRejectAsDifferentPerson": "boolean",
+  "reasoning": "string"
+}
+
+Rules:
+- Compare stable facial features: eye spacing, eyebrow shape, nose shape, lip shape, jawline/chin, and overall face shape.
+- Ignore background, clothing, hairstyle changes, beard stubble changes, and minor lighting variation.
+- If the visible stable features mostly align, samePersonLikelihood should be reasonably high even if the photos are from different cameras.
+- If several stable facial features differ clearly, set shouldRejectAsDifferentPerson to true.
+- Be conservative when the ID portrait is tiny or unclear.`
 
 function extractJSON(text) {
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
@@ -90,6 +149,11 @@ function clampScore(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
   return Math.max(0, Math.min(100, Math.round(numeric)))
+}
+
+function normaliseClarity(value, allowedValues, fallback) {
+  const clarity = String(value || '').trim().toLowerCase()
+  return allowedValues.includes(clarity) ? clarity : fallback
 }
 
 function getFilledFieldCount(parsed) {
@@ -157,6 +221,7 @@ function deriveDocumentAuthenticity(parsed) {
   const modelAuthentic = parsed.isAuthentic === true
   const strongForgerySignal = hasStrongForgerySignal(parsed)
   const fieldCount = getFilledFieldCount(parsed)
+  const hasPhotoInId = parsed.hasPhotoInId !== false
   const hasCoreIdentityFields = Boolean(
     parsed.documentType &&
     parsed.extractedName &&
@@ -173,7 +238,11 @@ function deriveDocumentAuthenticity(parsed) {
     return true
   }
 
-  if (hasCoreIdentityFields && fieldCount >= 4 && modelConfidence >= 20) {
+  if (hasCoreIdentityFields && fieldCount >= 4 && hasPhotoInId && modelConfidence >= 15) {
+    return true
+  }
+
+  if (hasCoreIdentityFields && fieldCount >= 4 && modelConfidence >= 25) {
     return true
   }
 
@@ -187,6 +256,12 @@ function calculateDocumentConfidence(parsed, imageCount) {
   const hasIdNumber = Boolean(parsed.idNumber && parsed.idNumber.trim())
   const hasDocumentType = Boolean(parsed.documentType && parsed.documentType.trim())
   const hasExpiry = Boolean(parsed.expiryDate && parsed.expiryDate.trim())
+  const hasPhotoInId = parsed.hasPhotoInId !== false
+  const idPhotoClarity = normaliseClarity(
+    parsed.idPhotoClarity,
+    ['clear', 'slightly_unclear', 'unclear', 'no_photo'],
+    hasPhotoInId ? 'slightly_unclear' : 'no_photo'
+  )
   const isPassport = (parsed.documentType || '').toLowerCase().includes('passport')
   const suspiciousReason = hasSuspiciousReason(parsed)
   const qualityIssueReason = hasQualityIssueReason(parsed)
@@ -211,6 +286,11 @@ function calculateDocumentConfidence(parsed, imageCount) {
   if (hasDob) derivedConfidence += 6
   if (hasIdNumber) derivedConfidence += 7
   if (hasExpiry || parsed.expiryDate === 'No Expiry') derivedConfidence += 4
+  if (hasPhotoInId) derivedConfidence += 4
+
+  if (idPhotoClarity === 'clear') derivedConfidence += 4
+  else if (idPhotoClarity === 'slightly_unclear') derivedConfidence += 1
+  else if (idPhotoClarity === 'unclear') derivedConfidence -= 4
 
   if (isPassport && hasName && hasDob && hasIdNumber && hasExpiry) {
     derivedConfidence += 6
@@ -241,24 +321,167 @@ function calculateDocumentConfidence(parsed, imageCount) {
 
 function calculateFaceMatchScore(parsed) {
   const modelScore = clampScore(parsed.matchScore)
-  let derivedScore = 30
+  const idFaceDetected = parsed.faceDetectedInId === true
+  const selfieFaceDetected = parsed.faceDetectedInSelfie === true
+  const bothFacesDetected = idFaceDetected && selfieFaceDetected
+  const isLive = parsed.isLivePerson === true
+  const verificationPassed = parsed.verificationPassed === true
 
-  if (parsed.faceDetectedInId === true) derivedScore += 15
-  if (parsed.faceDetectedInSelfie === true) derivedScore += 15
-  if (parsed.verificationPassed === true) derivedScore += 20
-  if (parsed.isLivePerson === true) derivedScore += 10
-
-  if (parsed.faceDetectedInId === false) derivedScore -= 20
-  if (parsed.faceDetectedInSelfie === false) derivedScore -= 20
-  if (parsed.verificationPassed === false) derivedScore -= 15
-
-  derivedScore = clampScore(derivedScore)
-
-  if (parsed.verificationPassed === true) {
-    return Math.max(derivedScore, Math.round((derivedScore + modelScore) / 2))
+  if (!bothFacesDetected) {
+    return Math.min(modelScore, 20)
   }
 
-  return Math.min(derivedScore, Math.round((derivedScore + modelScore) / 2))
+  let adjustedScore = modelScore
+
+  if (!isLive) {
+    adjustedScore = Math.min(adjustedScore, 55)
+  }
+
+  if (verificationPassed) {
+    adjustedScore += 4
+  } else if (adjustedScore >= 72 && isLive) {
+    adjustedScore += 2
+  } else {
+    adjustedScore = Math.min(adjustedScore, 68)
+  }
+
+  return clampScore(adjustedScore)
+}
+
+function calculateStrictFaceMatchScore(primaryParsed, strictParsed) {
+  const primaryScore = clampScore(primaryParsed.matchScore)
+  const strictScore = clampScore(strictParsed.strictMatchScore)
+  const samePersonConfidence = clampScore(strictParsed.samePersonConfidence)
+  const idPhotoClarity = normaliseClarity(
+    strictParsed.idPhotoClarity,
+    ['clear', 'slightly_unclear', 'unclear', 'too_small'],
+    'unclear'
+  )
+  const selfieClarity = normaliseClarity(
+    strictParsed.selfieClarity,
+    ['clear', 'slightly_unclear', 'unclear'],
+    'unclear'
+  )
+  const shouldTreatAsUncertain = strictParsed.shouldTreatAsUncertain === true
+  const bothFacesDetected = primaryParsed.faceDetectedInId === true && primaryParsed.faceDetectedInSelfie === true
+  const isLive = primaryParsed.isLivePerson === true
+
+  if (!bothFacesDetected) {
+    return {
+      matchScore: Math.min(primaryScore, 20),
+      faceUncertain: true,
+      idPhotoClarity,
+      selfieClarity,
+      samePersonConfidence
+    }
+  }
+
+  let combinedScore = Math.round((primaryScore * 0.45) + (strictScore * 0.55))
+  let faceUncertain = shouldTreatAsUncertain
+
+  if (idPhotoClarity === 'too_small') {
+    combinedScore = Math.min(combinedScore, 52)
+    faceUncertain = true
+  } else if (idPhotoClarity === 'unclear') {
+    combinedScore = Math.min(combinedScore, 60)
+    faceUncertain = true
+  } else if (idPhotoClarity === 'slightly_unclear') {
+    combinedScore = Math.min(combinedScore, 72)
+  }
+
+  if (selfieClarity === 'unclear') {
+    combinedScore = Math.min(combinedScore, 60)
+    faceUncertain = true
+  } else if (selfieClarity === 'slightly_unclear') {
+    combinedScore = Math.min(combinedScore, 74)
+  }
+
+  if (!isLive) {
+    combinedScore = Math.min(combinedScore, 55)
+  }
+
+  if (samePersonConfidence < 45) {
+    combinedScore = Math.min(combinedScore, 48)
+  } else if (samePersonConfidence < 60) {
+    combinedScore = Math.min(combinedScore, 62)
+    faceUncertain = true
+  }
+
+  if (strictScore < 55 && primaryScore < 70) {
+    combinedScore = Math.min(combinedScore, 58)
+    faceUncertain = true
+  }
+
+  return {
+    matchScore: clampScore(combinedScore),
+    faceUncertain,
+    idPhotoClarity,
+    selfieClarity,
+    samePersonConfidence
+  }
+}
+
+function calculateConsensusFaceResult(primaryParsed, strictFaceResult, featureAudit) {
+  const featureLikelihood = clampScore(featureAudit.samePersonLikelihood)
+  const featureAgreementCount = Math.max(0, Math.min(6, Math.round(Number(featureAudit.featureAgreementCount) || 0)))
+  const featureMismatchCount = Math.max(0, Math.min(6, Math.round(Number(featureAudit.featureMismatchCount) || 0)))
+  const shouldRejectAsDifferentPerson = featureAudit.shouldRejectAsDifferentPerson === true
+  const bothFacesDetected = primaryParsed.faceDetectedInId === true && primaryParsed.faceDetectedInSelfie === true
+
+  if (!bothFacesDetected) {
+    return {
+      matchScore: Math.min(strictFaceResult.matchScore, 20),
+      faceUncertain: true,
+      samePersonConfidence: Math.min(strictFaceResult.samePersonConfidence, featureLikelihood),
+      shouldRejectAsDifferentPerson,
+      featureAgreementCount,
+      featureMismatchCount
+    }
+  }
+
+  let consensusScore = Math.round(
+    (strictFaceResult.matchScore * 0.5) +
+    (featureLikelihood * 0.35) +
+    ((featureAgreementCount / 6) * 100 * 0.15)
+  )
+
+  let faceUncertain = strictFaceResult.faceUncertain
+  let samePersonConfidence = Math.round((strictFaceResult.samePersonConfidence * 0.6) + (featureLikelihood * 0.4))
+
+  if (shouldRejectAsDifferentPerson || featureMismatchCount >= 4) {
+    consensusScore = Math.min(consensusScore, 45)
+    samePersonConfidence = Math.min(samePersonConfidence, 40)
+  } else if (featureMismatchCount === 3) {
+    consensusScore = Math.min(consensusScore, 58)
+    samePersonConfidence = Math.min(samePersonConfidence, 55)
+    faceUncertain = true
+  }
+
+  if (featureAgreementCount >= 4 && featureMismatchCount <= 1 && !strictFaceResult.faceUncertain) {
+    if (strictFaceResult.matchScore >= 68 && featureLikelihood >= 72) {
+      consensusScore = Math.max(consensusScore, 76)
+      samePersonConfidence = Math.max(samePersonConfidence, 74)
+    }
+  }
+
+  if (strictFaceResult.idPhotoClarity === 'too_small' || strictFaceResult.idPhotoClarity === 'unclear') {
+    faceUncertain = true
+    consensusScore = Math.min(consensusScore, 62)
+  }
+
+  if (strictFaceResult.selfieClarity === 'unclear') {
+    faceUncertain = true
+    consensusScore = Math.min(consensusScore, 60)
+  }
+
+  return {
+    matchScore: clampScore(consensusScore),
+    faceUncertain,
+    samePersonConfidence: clampScore(samePersonConfidence),
+    shouldRejectAsDifferentPerson,
+    featureAgreementCount,
+    featureMismatchCount
+  }
 }
 
 function calculateLivenessConfidence(parsed) {
@@ -330,6 +553,54 @@ async function callMistral(contentParts) {
   }
 }
 
+async function runStrictFaceAudit(idImageBase64, selfieBase64) {
+  const contentParts = [
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${idImageBase64}`
+      }
+    },
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${selfieBase64}`
+      }
+    },
+    {
+      type: 'text',
+      text: PROMPT_G003
+    }
+  ]
+
+  const text = await callMistral(contentParts)
+  return extractJSON(text)
+}
+
+async function runFeatureFaceAudit(idImageBase64, selfieBase64) {
+  const contentParts = [
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${idImageBase64}`
+      }
+    },
+    {
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${selfieBase64}`
+      }
+    },
+    {
+      type: 'text',
+      text: PROMPT_G004
+    }
+  ]
+
+  const text = await callMistral(contentParts)
+  return extractJSON(text)
+}
+
 async function normaliseDocumentInput(imageBase64, mimeType) {
   let processedImageBase64 = imageBase64
   let processedMimeType = normaliseMimeType(mimeType)
@@ -387,6 +658,12 @@ async function verifyDocument(input, mimeType) {
     idNumber: parsed.idNumber || '',
     address: parsed.address || '',
     expiryDate: parsed.expiryDate || '',
+    hasPhotoInId: parsed.hasPhotoInId ?? true,
+    idPhotoClarity: normaliseClarity(
+      parsed.idPhotoClarity,
+      ['clear', 'slightly_unclear', 'unclear', 'no_photo'],
+      parsed.hasPhotoInId === false ? 'no_photo' : 'slightly_unclear'
+    ),
     isAuthentic,
     tamperingDetected: parsed.tamperingDetected ?? false,
     confidenceScore,
@@ -419,9 +696,48 @@ async function verifyFace(idImageBase64, selfieBase64) {
 
   const text = await callMistral(contentParts)
   const parsed = extractJSON(text)
-  const matchScore = calculateFaceMatchScore(parsed)
+  const primaryMatchScore = calculateFaceMatchScore(parsed)
   const livenessConfidence = calculateLivenessConfidence(parsed)
-  const verificationPassed = parsed.verificationPassed ?? (matchScore >= 75 && parsed.isLivePerson !== false)
+  const strictParsed = await runStrictFaceAudit(idImageBase64, selfieBase64)
+  const strictFaceResult = calculateStrictFaceMatchScore(
+    { ...parsed, matchScore: primaryMatchScore },
+    strictParsed
+  )
+  const featureAudit = await runFeatureFaceAudit(idImageBase64, selfieBase64)
+  const consensusFaceResult = calculateConsensusFaceResult(
+    parsed,
+    strictFaceResult,
+    featureAudit
+  )
+  const matchScore = consensusFaceResult.matchScore
+  const borderlinePortraitPass =
+    parsed.faceDetectedInId === true &&
+    parsed.faceDetectedInSelfie === true &&
+    parsed.isLivePerson !== false &&
+    consensusFaceResult.faceUncertain &&
+    ['too_small', 'unclear'].includes(strictFaceResult.idPhotoClarity) &&
+    !consensusFaceResult.shouldRejectAsDifferentPerson &&
+    consensusFaceResult.samePersonConfidence >= 58 &&
+    matchScore >= 60
+
+  const verificationPassed =
+    parsed.faceDetectedInId === true &&
+    parsed.faceDetectedInSelfie === true &&
+    parsed.isLivePerson !== false &&
+    !consensusFaceResult.shouldRejectAsDifferentPerson &&
+    (
+      (
+        !consensusFaceResult.faceUncertain &&
+        consensusFaceResult.samePersonConfidence >= 70 &&
+        matchScore >= 72
+      ) ||
+      borderlinePortraitPass
+    )
+
+  const reasoningParts = [parsed.reasoning, strictParsed.reasoning, featureAudit.reasoning]
+    .map(part => String(part || '').trim())
+    .filter(Boolean)
+  const reasoning = reasoningParts.join(' ')
 
   return {
     matchScore,
@@ -430,7 +746,11 @@ async function verifyFace(idImageBase64, selfieBase64) {
     verificationPassed,
     faceDetectedInId: parsed.faceDetectedInId ?? false,
     faceDetectedInSelfie: parsed.faceDetectedInSelfie ?? false,
-    reasoning: parsed.reasoning || ''
+    reasoning,
+    faceUncertain: consensusFaceResult.faceUncertain,
+    idPhotoClarity: strictFaceResult.idPhotoClarity,
+    selfieClarity: strictFaceResult.selfieClarity,
+    samePersonConfidence: consensusFaceResult.samePersonConfidence
   }
 }
 

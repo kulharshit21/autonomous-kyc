@@ -1,7 +1,7 @@
 {
   "name": "kyc-backend",
   "version": "1.0.0",
-  "description": "Autonomous KYC backend — Express + Gemini + Ollama",
+  "description": "Autonomous KYC backend - Express + Mistral Pixtral + Ollama",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -1,7 +1,9 @@
 function calculateRiskScore(documentResult, faceResult, customerInfo) {
   const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
   const dataConsistencyRisk = calcDataConsistencyRisk(customerInfo, documentResult)
-  const faceMatchRisk = calcFaceMatchRisk(faceResult)
+  const borderlineFaceReview = isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, calcLivenessRisk(faceResult))
+  const faceMatchRisk = calcFaceMatchRisk(faceResult, borderlineFaceReview)
+  const severeFaceMismatch = isSevereFaceMismatch(faceResult)
   const livenessRisk = calcLivenessRisk(faceResult)
   const documentAuthenticityRisk = calcDocumentRisk(documentResult, {
     dataConsistencyRisk,
@@ -48,7 +50,30 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
     decision = 'review'
   }
 
+  if (faceMatchRisk >= 20 && decision === 'approved') {
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
+  if (borderlineFaceReview && faceResult.verificationPassed !== true && decision === 'approved') {
+    riskScore = Math.max(riskScore, 35)
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
   if (identityMismatchCount > 2) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (severeFaceMismatch) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (faceMatchRisk >= 25 && !borderlineFaceReview) {
     riskScore = Math.max(riskScore, 75)
     riskCategory = 'high'
     decision = 'rejected'
@@ -77,8 +102,13 @@ function calcDocumentRisk(documentResult, supportingSignals = {}) {
     (supportingSignals.dataConsistencyRisk || 0) === 0 &&
     (supportingSignals.faceMatchRisk || 0) === 0 &&
     (supportingSignals.livenessRisk || 0) === 0
+  const hasModerateSupport =
+    (supportingSignals.dataConsistencyRisk || 0) <= 3 &&
+    (supportingSignals.faceMatchRisk || 0) <= 15 &&
+    (supportingSignals.livenessRisk || 0) === 0
 
   if (documentResult.isAuthentic === false) {
+    if (hasModerateSupport && confidence >= 35) return 8
     if (hasStrongSupport && confidence >= 35) return 8
     if (confidence >= 70) return 8
     if (confidence >= 50) return 15
@@ -93,12 +123,62 @@ function calcDocumentRisk(documentResult, supportingSignals = {}) {
   return Math.min(30, risk)
 }
 
-function calcFaceMatchRisk(faceResult) {
+function calcFaceMatchRisk(faceResult, borderlineFaceReview = false) {
   const score = Number(faceResult.matchScore) || 0
+  const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
+  const faceUncertain = faceResult.faceUncertain === true
+  const verificationPassed = faceResult.verificationPassed === true
+  const idPhotoClarity = String(faceResult.idPhotoClarity || '').toLowerCase()
+
+  if (borderlineFaceReview) return 15
+  if (verificationPassed && faceUncertain) return 12
+  if (verificationPassed === false && samePersonConfidence > 0 && samePersonConfidence < 45) return 30
+  if (score < 72 && samePersonConfidence > 0 && samePersonConfidence < 55) return 30
+  if (verificationPassed === false && score < 72) return 25
+  if (faceUncertain && (idPhotoClarity === 'too_small' || idPhotoClarity === 'unclear')) return 20
+  if (faceUncertain) return 12
   if (score >= 85) return 0
   if (score >= 72) return 5
-  if (score >= 55) return 15
+  if (score >= 55) return 25
   return 30
+}
+
+function isSevereFaceMismatch(faceResult) {
+  const score = Number(faceResult.matchScore) || 0
+  const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
+  const verificationPassed = faceResult.verificationPassed === true
+  const faceUncertain = faceResult.faceUncertain === true
+
+  if (verificationPassed) return false
+  if (samePersonConfidence > 0 && samePersonConfidence < 45) return true
+  if (score < 72 && samePersonConfidence > 0 && samePersonConfidence < 55 && !faceUncertain) return true
+  if (!faceUncertain && score < 60) return true
+  return false
+}
+
+function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk) {
+  const score = Number(faceResult.matchScore) || 0
+  const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
+  const faceUncertain = faceResult.faceUncertain === true
+  const idPhotoClarity = String(faceResult.idPhotoClarity || documentResult.idPhotoClarity || '').toLowerCase()
+  const documentConfidence = Number(documentResult.confidenceScore) || 0
+  const documentLooksStrong =
+    documentResult.tamperingDetected !== true &&
+    (
+      (documentResult.isAuthentic === true && documentConfidence >= 55) ||
+      documentConfidence >= 35
+    )
+
+  return (
+    (faceUncertain || ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)) &&
+    score >= 55 &&
+    score < 72 &&
+    samePersonConfidence >= 55 &&
+    dataConsistencyRisk === 0 &&
+    livenessRisk === 0 &&
+    documentLooksStrong &&
+    ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)
+  )
 }
 
 function calcExpiryRisk(documentResult) {
@@ -185,6 +265,33 @@ function normaliseIdNumber(value) {
     .trim()
 }
 
+function getIdDifferenceCount(left, right) {
+  if (!left || !right || left.length !== right.length) return Number.POSITIVE_INFINITY
+
+  let differences = 0
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) differences += 1
+  }
+
+  return differences
+}
+
+function isMinorIdMismatch(customerInfo, documentResult) {
+  const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
+  const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
+
+  if (!enteredIdNumber || !extractedIdNumber) return false
+  if (enteredIdNumber === extractedIdNumber) return false
+  if (enteredIdNumber.length < 6 || extractedIdNumber.length < 6) return false
+
+  const nameMismatchRisk = getNameMismatchRisk(customerInfo.fullName || '', documentResult.extractedName || '')
+  const enteredDOB = normaliseDate(customerInfo.dateOfBirth)
+  const extractedDOB = normaliseDate(documentResult.extractedDOB)
+  const dobMatches = !enteredDOB || !extractedDOB || enteredDOB === extractedDOB
+
+  return getIdDifferenceCount(enteredIdNumber, extractedIdNumber) === 1 && nameMismatchRisk < 8 && dobMatches
+}
+
 function calcDataConsistencyRisk(customerInfo, documentResult) {
   let risk = 0
 
@@ -203,7 +310,7 @@ function calcDataConsistencyRisk(customerInfo, documentResult) {
   const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
   const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
   if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
-    risk += 10
+    risk += isMinorIdMismatch(customerInfo, documentResult) ? 3 : 10
   }
 
   return Math.min(15, risk)
@@ -226,7 +333,7 @@ function countIdentityMismatches(customerInfo, documentResult) {
 
   const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
   const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
-  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
+  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber && !isMinorIdMismatch(customerInfo, documentResult)) {
     mismatches += 1
   }
 

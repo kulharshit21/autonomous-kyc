@@ -15,7 +15,8 @@ const INITIAL_KYC_DATA = {
   },
   faceResult: {
     matchScore: 0, isLivePerson: null, livenessConfidence: 0,
-    verificationPassed: null, selfieBase64: ''
+    verificationPassed: null, selfieBase64: '',
+    faceUncertain: false, idPhotoClarity: '', selfieClarity: '', samePersonConfidence: 0
   },
   riskScore: 0,
   riskCategory: '',

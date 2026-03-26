@@ -26,3 +26,36 @@ export function resizeImageIfNeeded(base64, maxSizeKB = 1024) {
     img.src = `data:image/jpeg;base64,${base64}`
   })
 }
+
+export function enhanceImageForVerification(base64, options = {}) {
+  const {
+    minDimension = 960,
+    brightness = 1.02,
+    contrast = 1.08,
+    saturate = 1.02,
+    quality = 0.92
+  } = options
+
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const scale = Math.max(1, minDimension / Math.min(img.width, img.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.round(img.width * scale)
+      canvas.height = Math.round(img.height * scale)
+
+      const context = canvas.getContext('2d')
+      if (!context) {
+        resolve(base64)
+        return
+      }
+
+      context.filter = `brightness(${brightness}) contrast(${contrast}) saturate(${saturate})`
+      context.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', quality).split(',')[1])
+    }
+
+    img.onerror = () => resolve(base64)
+    img.src = `data:image/jpeg;base64,${base64}`
+  })
+}

@@ -84,7 +84,7 @@ Important backend files:
 
 - [server.js](/d:/per/autonomous-kyc/kyc-backend/server.js)
 - [kyc.js](/d:/per/autonomous-kyc/kyc-backend/routes/kyc.js)
-- [gemini.js](/d:/per/autonomous-kyc/kyc-backend/services/gemini.js)
+- [mistralVision.js](/d:/per/autonomous-kyc/kyc-backend/services/mistralVision.js)
 - [mistralText.js](/d:/per/autonomous-kyc/kyc-backend/services/mistralText.js)
 - [pdfConverter.js](/d:/per/autonomous-kyc/kyc-backend/services/pdfConverter.js)
 - [riskEngine.js](/d:/per/autonomous-kyc/kyc-backend/services/riskEngine.js)
@@ -174,9 +174,9 @@ Then it asks the Mistral text model to generate the final explanation shown in s
 
 ## 5. How Document Verification Works
 
-### `services/gemini.js`
+### `services/mistralVision.js`
 
-Even though the file name is `gemini.js`, it currently works as the main vision service for the Mistral-based flow.
+This file is the main Mistral Pixtral vision service for the project.
 
 This file handles:
 

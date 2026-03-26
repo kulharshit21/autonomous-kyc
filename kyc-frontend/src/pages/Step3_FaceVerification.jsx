@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import FaceCompare from '../components/FaceCompare'
-import LoadingSpinner from '../components/LoadingSpinner'
+import FaceVerificationChecklistLoader from '../components/FaceVerificationChecklistLoader'
 import StepCanvas from '../components/StepCanvas'
 import { apiClient } from '../utils/apiClient'
+import { enhanceImageForVerification } from '../utils/imageUtils'
 
 export default function Step3_FaceVerification({ kycData, updateKycData }) {
   const navigate = useNavigate()
@@ -20,6 +21,7 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
   const [error, setError] = useState('')
 
   const idImageBase64 = kycData.documentResult.processedImageBase64 || kycData.documentResult.imageBase64 || ''
+  const idHasPhoto = kycData.documentResult.hasPhotoInId !== false
 
   useEffect(() => {
     return () => {
@@ -94,7 +96,7 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
     }
   }
 
-  const captureFrame = () => {
+  const captureFrame = async () => {
     const video = videoRef.current
 
     if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) {
@@ -115,10 +117,10 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
     context.drawImage(video, 0, 0, canvas.width, canvas.height)
 
     const dataURL = canvas.toDataURL('image/jpeg', 0.92)
-    const base64 = dataURL.split(',')[1]
+    const base64 = await enhanceImageForVerification(dataURL.split(',')[1], { minDimension: 960 })
 
     setSelfieBase64(base64)
-    setSelfiePreviewURL(dataURL)
+    setSelfiePreviewURL(`data:image/jpeg;base64,${base64}`)
     setFaceResult(null)
     setError('')
     setCameraError('')
@@ -131,13 +133,31 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
       setError('Missing document image for face verification. Please re-upload the ID document and try again.')
       return
     }
+    if (!idHasPhoto) {
+      setError('No photo was detected in the uploaded ID. Please go back and upload an ID image or page that clearly contains the holder photo.')
+      return
+    }
 
     try {
       setLoading(true)
       setError('')
+      const enhancedIdImageBase64 = await enhanceImageForVerification(idImageBase64, {
+        minDimension: 1400,
+        brightness: 1.03,
+        contrast: 1.12,
+        saturate: 1.03,
+        quality: 0.95
+      })
+      const enhancedSelfieBase64 = await enhanceImageForVerification(selfieBase64, {
+        minDimension: 1200,
+        brightness: 1.03,
+        contrast: 1.1,
+        saturate: 1.02,
+        quality: 0.95
+      })
       const result = await apiClient.post('/api/kyc/verify-face', {
-        idImageBase64,
-        selfieBase64
+        idImageBase64: enhancedIdImageBase64,
+        selfieBase64: enhancedSelfieBase64
       })
       setFaceResult(result)
     } catch (err) {
@@ -154,6 +174,10 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
         isLivePerson: faceResult.isLivePerson,
         livenessConfidence: faceResult.livenessConfidence,
         verificationPassed: faceResult.verificationPassed,
+        faceUncertain: faceResult.faceUncertain,
+        idPhotoClarity: faceResult.idPhotoClarity,
+        selfieClarity: faceResult.selfieClarity,
+        samePersonConfidence: faceResult.samePersonConfidence,
         selfieBase64
       }
     })
@@ -271,7 +295,7 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
                 )}
                 {loading && (
                   <div className="w-full rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
-                    <LoadingSpinner message="Comparing faces with Mistral Pixtral..." />
+                    <FaceVerificationChecklistLoader />
                   </div>
                 )}
                 {!loading && (
@@ -301,6 +325,9 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
                     selfieBase64={selfieBase64}
                     matchScore={faceResult.matchScore}
                     verificationPassed={faceResult.verificationPassed}
+                    faceUncertain={faceResult.faceUncertain}
+                    idPhotoClarity={faceResult.idPhotoClarity}
+                    selfieClarity={faceResult.selfieClarity}
                   />
                 </div>
 

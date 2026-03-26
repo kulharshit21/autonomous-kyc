@@ -95,6 +95,33 @@ function normaliseIdNumber(value) {
     .trim()
 }
 
+function getIdDifferenceCount(left, right) {
+  if (!left || !right || left.length !== right.length) return Number.POSITIVE_INFINITY
+
+  let differences = 0
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) differences += 1
+  }
+
+  return differences
+}
+
+function isMinorIdMismatch(customerInfo, documentResult) {
+  const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
+  const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
+
+  if (!enteredIdNumber || !extractedIdNumber) return false
+  if (enteredIdNumber === extractedIdNumber) return false
+  if (enteredIdNumber.length < 6 || extractedIdNumber.length < 6) return false
+
+  const nameMismatchRisk = getNameMismatchRisk(customerInfo.fullName || '', documentResult.extractedName || '')
+  const enteredDob = normaliseDate(customerInfo.dateOfBirth)
+  const extractedDob = normaliseDate(documentResult.extractedDOB)
+  const dobMatches = !enteredDob || !extractedDob || enteredDob === extractedDob
+
+  return getIdDifferenceCount(enteredIdNumber, extractedIdNumber) === 1 && nameMismatchRisk < 8 && dobMatches
+}
+
 function getNameMatchLabel(customerInfo, documentResult) {
   const enteredName = customerInfo.fullName || ''
   const extractedName = documentResult.extractedName || ''
@@ -106,7 +133,36 @@ function getIdNumberMatchLabel(customerInfo, documentResult) {
   const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
   const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
   if (!enteredIdNumber || !extractedIdNumber) return 'Unknown'
+  if (isMinorIdMismatch(customerInfo, documentResult)) return 'Near Match'
   return enteredIdNumber === extractedIdNumber ? 'Yes' : 'No'
+}
+
+function getIdentityMismatchNotes(customerInfo, documentResult) {
+  const notes = []
+  const enteredName = customerInfo.fullName || ''
+  const extractedName = documentResult.extractedName || ''
+  const enteredDob = normaliseDate(customerInfo.dateOfBirth)
+  const extractedDob = normaliseDate(documentResult.extractedDOB)
+  const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
+  const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
+
+  if (enteredName && extractedName && getNameMismatchRisk(enteredName, extractedName) >= 8) {
+    notes.push(`Entered name does not match the document name (${enteredName} vs ${extractedName}).`)
+  }
+
+  if (enteredDob && extractedDob && enteredDob !== extractedDob) {
+    notes.push(`Entered date of birth does not match the document DOB (${enteredDob} vs ${extractedDob}).`)
+  }
+
+  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
+    if (isMinorIdMismatch(customerInfo, documentResult)) {
+      notes.push(`Entered ID number is one character away from the extracted document number (${enteredIdNumber} vs ${extractedIdNumber}), which may be a small entry or OCR difference.`)
+    } else {
+      notes.push(`Entered ID number does not match the extracted document number (${enteredIdNumber} vs ${extractedIdNumber}).`)
+    }
+  }
+
+  return notes
 }
 
 function countIdentityMismatches(customerInfo, documentResult) {
@@ -126,7 +182,7 @@ function countIdentityMismatches(customerInfo, documentResult) {
 
   const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
   const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
-  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
+  if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber && !isMinorIdMismatch(customerInfo, documentResult)) {
     mismatches += 1
   }
 
@@ -139,6 +195,14 @@ function buildFallbackExplanation(results) {
   }
 
   if (results.decision === 'review') {
+    if (results.faceReviewHint === 'possible_age_or_photo_gap') {
+      return `This case requires manual review because the selfie and ID portrait produced only a borderline face match, likely due to an older photo or a weak printed ID portrait. The rest of the identity checks were strong, so a compliance reviewer should confirm the same-person match before proceeding.`
+    }
+
+    if ((results.breakdown?.faceMatchRisk || 0) >= 20) {
+      return `This case requires manual review because the captured selfie did not produce a strong enough face match against the ID photo. The document may still appear genuine, but the person match needs closer review before proceeding.`
+    }
+
     if ((results.breakdown?.dataConsistencyRisk || 0) >= 8) {
       return `This case requires manual review because the entered identity details do not align with the details extracted from the document. The document may still appear genuine, but the person information needs manual confirmation before proceeding.`
     }
@@ -149,6 +213,65 @@ function buildFallbackExplanation(results) {
   return `This case was rejected because the verification checks produced a high overall risk score of ${results.riskScore}/100 and the evidence is not strong enough for approval. Manual compliance escalation is required before any onboarding action is taken.`
 }
 
+function getDecisionSeverity(decision) {
+  if (decision === 'rejected') return 3
+  if (decision === 'review') return 2
+  return 1
+}
+
+function mergeConservativeResults(localResults, apiResults) {
+  const localSeverity = getDecisionSeverity(localResults.decision)
+  const apiSeverity = getDecisionSeverity(apiResults.decision)
+  const useLocalDecision = localSeverity >= apiSeverity
+
+  const decision = useLocalDecision ? localResults.decision : apiResults.decision
+  const riskCategory = useLocalDecision ? localResults.riskCategory : apiResults.riskCategory
+  const explanation = useLocalDecision ? localResults.explanation : apiResults.explanation
+  const breakdown = {
+    documentAuthenticityRisk: Math.max(localResults.breakdown.documentAuthenticityRisk || 0, apiResults.breakdown.documentAuthenticityRisk || 0),
+    faceMatchRisk: Math.max(localResults.breakdown.faceMatchRisk || 0, apiResults.breakdown.faceMatchRisk || 0),
+    expiryRisk: Math.max(localResults.breakdown.expiryRisk || 0, apiResults.breakdown.expiryRisk || 0),
+    dataConsistencyRisk: Math.max(localResults.breakdown.dataConsistencyRisk || 0, apiResults.breakdown.dataConsistencyRisk || 0),
+    livenessRisk: Math.max(localResults.breakdown.livenessRisk || 0, apiResults.breakdown.livenessRisk || 0)
+  }
+  const riskScore = Math.max(localResults.riskScore || 0, apiResults.riskScore || 0)
+
+  return {
+    ...apiResults,
+    riskScore,
+    riskCategory,
+    decision,
+    explanation,
+    breakdown,
+    faceReviewHint: localResults.faceReviewHint || apiResults.faceReviewHint || ''
+  }
+}
+
+function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk) {
+  const score = Number(faceResult.matchScore) || 0
+  const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
+  const faceUncertain = faceResult.faceUncertain === true
+  const idPhotoClarity = String(faceResult.idPhotoClarity || documentResult.idPhotoClarity || '').toLowerCase()
+  const documentConfidence = Number(documentResult.confidenceScore) || 0
+  const documentLooksStrong =
+    documentResult.tamperingDetected !== true &&
+    (
+      (documentResult.isAuthentic === true && documentConfidence >= 55) ||
+      documentConfidence >= 35
+    )
+
+  return (
+    (faceUncertain || ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)) &&
+    score >= 55 &&
+    score < 72 &&
+    samePersonConfidence >= 55 &&
+    dataConsistencyRisk === 0 &&
+    livenessRisk === 0 &&
+    documentLooksStrong &&
+    ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)
+  )
+}
+
 function calculateDocumentAuthenticityRisk(documentResult, supportingSignals = {}) {
   let risk = 0
   const documentConfidence = Number(documentResult.confidenceScore) || 0
@@ -156,12 +279,17 @@ function calculateDocumentAuthenticityRisk(documentResult, supportingSignals = {
     (supportingSignals.dataConsistencyRisk || 0) === 0 &&
     (supportingSignals.faceMatchRisk || 0) === 0 &&
     (supportingSignals.livenessRisk || 0) === 0
+  const hasModerateSupport =
+    (supportingSignals.dataConsistencyRisk || 0) <= 3 &&
+    (supportingSignals.faceMatchRisk || 0) <= 15 &&
+    (supportingSignals.livenessRisk || 0) === 0
 
   if (documentResult.tamperingDetected === true) {
     return 30
   }
 
   if (documentResult.isAuthentic === false) {
+    if (hasModerateSupport && documentConfidence >= 35) return 8
     if (hasStrongSupport && documentConfidence >= 35) return 8
     if (documentConfidence >= 70) return 8
     if (documentConfidence >= 50) return 15
@@ -183,10 +311,10 @@ function calculateLocalResults(kycData) {
   const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
 
   const matchScore = Number(faceResult.matchScore) || 0
-  let faceMatchRisk = 30
-  if (matchScore >= 85) faceMatchRisk = 0
-  else if (matchScore >= 72) faceMatchRisk = 5
-  else if (matchScore >= 55) faceMatchRisk = 15
+  const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
+  const faceUncertain = faceResult.faceUncertain === true
+  const verificationPassed = faceResult.verificationPassed === true
+  const idPhotoClarity = String(faceResult.idPhotoClarity || '').toLowerCase()
 
   const expiryDate = documentResult.expiryDate
   let expiryRisk = 8
@@ -218,7 +346,7 @@ function calculateLocalResults(kycData) {
   const enteredIdNumber = normaliseIdNumber(customerInfo.idNumber)
   const extractedIdNumber = normaliseIdNumber(documentResult.idNumber)
   if (enteredIdNumber && extractedIdNumber && enteredIdNumber !== extractedIdNumber) {
-    dataConsistencyRisk += 10
+    dataConsistencyRisk += isMinorIdMismatch(customerInfo, documentResult) ? 3 : 10
   }
   dataConsistencyRisk = Math.min(15, dataConsistencyRisk)
 
@@ -230,6 +358,19 @@ function calculateLocalResults(kycData) {
     if (confidence < 60) livenessRisk = 7
     else if (confidence < 80) livenessRisk = 3
   }
+
+  const borderlineFaceReview = isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk)
+  let faceMatchRisk = 30
+  if (borderlineFaceReview) faceMatchRisk = 15
+  else if (verificationPassed && faceUncertain) faceMatchRisk = 12
+  else if (verificationPassed === false && samePersonConfidence > 0 && samePersonConfidence < 45) faceMatchRisk = 30
+  else if (matchScore < 72 && samePersonConfidence > 0 && samePersonConfidence < 55) faceMatchRisk = 30
+  else if (verificationPassed === false && matchScore < 72) faceMatchRisk = 25
+  else if (faceUncertain && (idPhotoClarity === 'too_small' || idPhotoClarity === 'unclear')) faceMatchRisk = 20
+  else if (faceUncertain) faceMatchRisk = 12
+  else if (matchScore >= 85) faceMatchRisk = 0
+  else if (matchScore >= 72) faceMatchRisk = 5
+  else if (matchScore >= 55) faceMatchRisk = 25
 
   const documentAuthenticityRisk = calculateDocumentAuthenticityRisk(documentResult, {
     dataConsistencyRisk,
@@ -271,7 +412,36 @@ function calculateLocalResults(kycData) {
     decision = 'review'
   }
 
+  if (faceMatchRisk >= 20 && decision === 'approved') {
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
+  if (borderlineFaceReview && verificationPassed !== true && decision === 'approved') {
+    riskScore = Math.max(riskScore, 35)
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
   if (identityMismatchCount > 2) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (!verificationPassed && ((samePersonConfidence > 0 && samePersonConfidence < 45) || (!faceUncertain && matchScore < 60))) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (matchScore < 72 && samePersonConfidence > 0 && samePersonConfidence < 55 && !borderlineFaceReview) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (faceMatchRisk >= 25 && !borderlineFaceReview) {
     riskScore = Math.max(riskScore, 75)
     riskCategory = 'high'
     decision = 'rejected'
@@ -281,6 +451,7 @@ function calculateLocalResults(kycData) {
     riskScore,
     riskCategory,
     decision,
+    faceReviewHint: borderlineFaceReview ? 'possible_age_or_photo_gap' : '',
     documentConfidenceScore: Number(documentResult.confidenceScore) || 0,
     breakdown: {
       documentAuthenticityRisk,
@@ -368,11 +539,28 @@ function calculateOverallVerificationConfidence(results) {
   else if (consistencyRisk >= 8) confidence = Math.min(confidence, 38)
   else if (consistencyRisk > 0) confidence = Math.min(confidence, 68)
 
+  if (faceRisk >= 25) confidence = Math.min(confidence, 18)
+  else if (faceRisk >= 20) confidence = Math.min(confidence, 38)
+  else if (faceRisk >= 12) confidence = Math.min(confidence, 55)
+
   if (documentRisk >= 15) confidence = Math.min(confidence, 55)
   else if (documentRisk > 0) confidence = Math.min(confidence, Math.max(documentConfidence + 10, 70))
 
   if (documentConfidence < 50) confidence = Math.min(confidence, 78)
   else if (documentConfidence < 60) confidence = Math.min(confidence, 84)
+
+  const isStrongApprovedCase =
+    results.decision === 'approved' &&
+    documentRisk === 0 &&
+    consistencyRisk <= 1 &&
+    livenessRisk === 0 &&
+    faceRisk <= 12 &&
+    documentConfidence >= 80
+
+  if (isStrongApprovedCase) {
+    const approvedFloor = faceRisk === 0 ? 88 : 72
+    confidence = Math.max(confidence, approvedFloor)
+  }
 
   if (results.decision === 'approved' && consistencyRisk === 0 && faceRisk === 0 && livenessRisk === 0) {
     confidence = Math.max(confidence, Math.min(96, Math.max(documentConfidence, 88)))
@@ -426,7 +614,7 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
 
         if (cancelled) return
 
-        const nextResults = {
+        const apiResults = {
           ...localResults,
           riskScore: typeof data.riskScore === 'number' ? data.riskScore : localResults.riskScore,
           riskCategory: data.riskCategory || localResults.riskCategory,
@@ -435,6 +623,8 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
           documentConfidenceScore: Number(kycData.documentResult.confidenceScore) || localResults.documentConfidenceScore,
           breakdown: data.breakdown || localResults.breakdown
         }
+
+        const nextResults = mergeConservativeResults(localResults, apiResults)
 
         setResults(nextResults)
         updateKycData({
@@ -470,6 +660,7 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
   const documentGenuinenessLabel = getDocumentGenuinenessLabel(kycData.documentResult, results)
   const overallVerificationConfidence = calculateOverallVerificationConfidence(results)
   const overallConfidenceLabel = getDocumentConfidenceLabel(overallVerificationConfidence)
+  const identityMismatchNotes = getIdentityMismatchNotes(kycData.customerInfo, kycData.documentResult)
 
   return (
     <StepCanvas currentStep={4}>
@@ -556,6 +747,16 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
 
           <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Verification Summary</h2>
+            {identityMismatchNotes.length > 0 && (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-800">
+                <p className="font-medium text-amber-900">Why this went to manual review</p>
+                <div className="mt-2 space-y-1">
+                  {identityMismatchNotes.map((note) => (
+                    <p key={note}>{note}</p>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <p className="text-xs text-gray-500">Entered Name</p>

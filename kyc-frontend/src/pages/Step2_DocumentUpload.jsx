@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import DocumentPreview from '../components/DocumentPreview'
 import StepCanvas from '../components/StepCanvas'
 import VerificationChecklistLoader from '../components/VerificationChecklistLoader'
-import { readFileAsBase64, resizeImageIfNeeded } from '../utils/imageUtils'
+import { enhanceImageForVerification, readFileAsBase64, resizeImageIfNeeded } from '../utils/imageUtils'
 import { apiClient } from '../utils/apiClient'
 
 const ACCEPTED_TYPES = {
@@ -25,6 +25,7 @@ export default function Step2_DocumentUpload({ updateKycData }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const hasPDFSelection = selectedFiles.some(file => file.type === 'application/pdf')
+  const missingIdPhoto = documentResult?.hasPhotoInId === false
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || [])
@@ -67,7 +68,7 @@ export default function Step2_DocumentUpload({ updateKycData }) {
         selectedFiles.map(async (file) => {
           const raw = await readFileAsBase64(file)
           const imageBase64 = IMAGE_TYPES.includes(file.type)
-            ? await resizeImageIfNeeded(raw)
+            ? await resizeImageIfNeeded(await enhanceImageForVerification(raw, { minDimension: 1100 }))
             : raw
 
           return {
@@ -218,6 +219,12 @@ export default function Step2_DocumentUpload({ updateKycData }) {
                   </div>
                 )}
 
+                {missingIdPhoto && (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    No portrait photo was detected in the uploaded ID. Please upload the front side or a document page that clearly shows the holder photo before continuing to face verification.
+                  </div>
+                )}
+
                 <div className="flex gap-3">
                   <button
                     onClick={handleReset}
@@ -227,6 +234,7 @@ export default function Step2_DocumentUpload({ updateKycData }) {
                   </button>
                   <button
                     onClick={handleConfirm}
+                    disabled={missingIdPhoto}
                     className="flex-1 rounded-2xl bg-slate-950 py-3 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                   >
                     Confirm and Continue

@@ -1,7 +1,7 @@
 // kyc.js — all /api/kyc/* route handlers
 const express = require('express')
 const router = express.Router()
-const { verifyDocument, verifyFace } = require('../services/gemini')
+const { verifyDocument, verifyFace } = require('../services/mistralVision')
 const { generateExplanation } = require('../services/mistralText')
 const { calculateRiskScore } = require('../services/riskEngine')
 

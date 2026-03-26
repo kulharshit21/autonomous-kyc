@@ -14,7 +14,11 @@ export default function DocumentPreview({ documentResult, imageBase64List = [], 
     { label: 'Date of Birth', value: documentResult.extractedDOB },
     { label: 'ID Number', value: documentResult.idNumber },
     { label: 'Address', value: documentResult.address || '-' },
-    { label: 'Expiry Date', value: documentResult.expiryDate }
+    { label: 'Expiry Date', value: documentResult.expiryDate },
+    {
+      label: 'ID Photo Detected',
+      value: documentResult.hasPhotoInId === false ? 'No' : 'Yes'
+    }
   ]
 
   return (

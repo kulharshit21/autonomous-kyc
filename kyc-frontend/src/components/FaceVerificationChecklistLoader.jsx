@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 
-function buildSteps({ hasPDF, fileCount }) {
+function buildSteps() {
   return [
-    hasPDF ? 'Converting PDF pages to images' : 'Preparing uploaded images',
-    fileCount > 1 ? 'Combining document views for analysis' : 'Optimizing document for analysis',
-    'Reading text and ID markers with Pixtral',
-    'Extracting names, dates, and document number',
-    'Checking document quality and consistency'
+    'Preparing the captured selfie for comparison',
+    'Locating the portrait inside the uploaded ID',
+    'Comparing selfie features with the ID photo',
+    'Checking liveness and same-person confidence',
+    'Finalizing face verification result'
   ]
 }
 
-export default function VerificationChecklistLoader({ hasPDF = false, fileCount = 1 }) {
-  const steps = useMemo(() => buildSteps({ hasPDF, fileCount }), [hasPDF, fileCount])
+export default function FaceVerificationChecklistLoader() {
+  const steps = useMemo(() => buildSteps(), [])
   const [activeIndex, setActiveIndex] = useState(0)
 
   useEffect(() => {
@@ -19,27 +19,27 @@ export default function VerificationChecklistLoader({ hasPDF = false, fileCount 
 
     const interval = setInterval(() => {
       setActiveIndex((current) => (current < steps.length - 1 ? current + 1 : current))
-    }, 950)
+    }, 900)
 
     return () => clearInterval(interval)
   }, [steps])
 
   return (
-    <div className="rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-sky-50 p-6 shadow-sm">
+    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-6 shadow-sm">
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />
         </div>
 
         <div className="flex-1">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-600">
-            Verification In Progress
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
+            Face Check In Progress
           </p>
           <h3 className="mt-1 text-lg font-semibold text-gray-900">
-            Analysing document pages with Mistral Pixtral
+            Comparing the live selfie with the ID portrait
           </h3>
           <p className="mt-2 text-sm text-gray-600">
-            We&apos;re validating the uploaded document step by step so the extracted details are cleaner and easier to trust.
+            We are checking the captured photo step by step so the match result is easier to trust and explain.
           </p>
 
           <div className="mt-5 space-y-3">
@@ -54,7 +54,7 @@ export default function VerificationChecklistLoader({ hasPDF = false, fileCount 
                     isDone
                       ? 'border-emerald-200 bg-emerald-50'
                       : isCurrent
-                      ? 'border-blue-200 bg-white shadow-sm'
+                      ? 'border-violet-200 bg-white shadow-sm'
                       : 'border-gray-200 bg-white/70'
                   }`}
                 >
@@ -63,7 +63,7 @@ export default function VerificationChecklistLoader({ hasPDF = false, fileCount 
                       isDone
                         ? 'bg-emerald-500 text-white'
                         : isCurrent
-                        ? 'bg-blue-600 text-white'
+                        ? 'bg-slate-950 text-white'
                         : 'bg-gray-200 text-gray-500'
                     }`}
                   >
@@ -74,7 +74,7 @@ export default function VerificationChecklistLoader({ hasPDF = false, fileCount 
                       {step}
                     </p>
                   </div>
-                  {isCurrent && <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-blue-500" />}
+                  {isCurrent && <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-violet-500" />}
                 </div>
               )
             })}
