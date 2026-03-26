@@ -18,8 +18,8 @@ export default function DocumentPreview({ documentResult, imageBase64List = [], 
   ]
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 w-full">
-      <div className="flex-shrink-0 flex flex-col gap-3">
+    <div className="flex w-full flex-col gap-6 md:flex-row">
+      <div className="flex flex-shrink-0 flex-col gap-3">
         <div className="grid grid-cols-2 gap-2">
           {imageBase64List.length > 0 ? (
             imageBase64List.map((imageBase64, index) => (
@@ -27,45 +27,45 @@ export default function DocumentPreview({ documentResult, imageBase64List = [], 
                 <img
                   src={`data:image/jpeg;base64,${imageBase64}`}
                   alt={fileNames[index] || `Uploaded document ${index + 1}`}
-                  className="w-32 h-24 object-cover rounded-lg border border-gray-200 shadow-sm"
+                  className="h-24 w-32 rounded-lg border border-gray-200 object-cover shadow-sm"
                 />
-                <p className="text-[11px] text-gray-500 mt-1 truncate">
+                <p className="mt-1 truncate text-[11px] text-gray-500">
                   {fileNames[index] || `Document ${index + 1}`}
                 </p>
               </div>
             ))
           ) : (
-            <div className="w-48 h-32 bg-gray-50 border border-gray-200 rounded-lg flex flex-col items-center justify-center gap-1 shadow-sm">
-              <span className="text-xs text-gray-500 text-center px-2">
+            <div className="flex h-32 w-48 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 bg-gray-50 shadow-sm">
+              <span className="px-2 text-center text-xs text-gray-500">
                 No preview available
               </span>
             </div>
           )}
         </div>
 
-        <div className={`text-xs font-semibold text-center px-2 py-1 rounded-full
+        <div className={`rounded-full px-2 py-1 text-center text-xs font-semibold
           ${documentResult.isAuthentic ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
           {documentResult.isAuthentic ? 'Document Appears Genuine' : 'Document Looks Suspicious'}
         </div>
 
         {documentResult.tamperingDetected && (
-          <div className="text-xs font-semibold text-center px-2 py-1 rounded-full bg-red-100 text-red-700">
+          <div className="rounded-full bg-red-100 px-2 py-1 text-center text-xs font-semibold text-red-700">
             Tampering Detected
           </div>
         )}
       </div>
 
-      <div className="flex-1 grid grid-cols-2 gap-3">
+      <div className="grid flex-1 grid-cols-2 gap-3">
         {fields.map(field => (
           <div key={field.label}>
-            <p className="text-xs text-gray-500 font-medium">{field.label}</p>
-            <p className="text-sm text-gray-900 font-semibold truncate">{field.value || '-'}</p>
+            <p className="text-xs font-medium text-gray-500">{field.label}</p>
+            <p className="truncate text-sm font-semibold text-gray-900">{field.value || '-'}</p>
           </div>
         ))}
         <div>
-          <p className="text-xs text-gray-500 font-medium">Document Read Confidence</p>
-          <p className="text-sm text-gray-900 font-semibold">
-            {confidence}% <span className="text-gray-500 font-medium">· {confidenceLabel}</span>
+          <p className="text-xs font-medium text-gray-500">Document Analysis Confidence</p>
+          <p className="text-sm font-semibold text-gray-900">
+            {confidence}% <span className="font-medium text-gray-500">· {confidenceLabel}</span>
           </p>
         </div>
       </div>

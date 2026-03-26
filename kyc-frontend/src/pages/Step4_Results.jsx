@@ -303,6 +303,28 @@ function getDocumentConfidenceLabel(score) {
   return 'Low'
 }
 
+function calculateOverallVerificationConfidence(results) {
+  const riskScore = Number(results.riskScore) || 0
+  const documentRisk = results.breakdown?.documentAuthenticityRisk || 0
+  const faceRisk = results.breakdown?.faceMatchRisk || 0
+  const consistencyRisk = results.breakdown?.dataConsistencyRisk || 0
+  const livenessRisk = results.breakdown?.livenessRisk || 0
+
+  let confidence = 100 - riskScore
+
+  if (consistencyRisk === 0) confidence += 4
+  if (faceRisk === 0) confidence += 4
+  if (livenessRisk === 0) confidence += 3
+  if (documentRisk === 0) confidence += 4
+  else if (documentRisk <= 8) confidence += 1
+
+  if (results.decision === 'approved') confidence = Math.max(confidence, 88)
+  if (results.decision === 'review') confidence = Math.min(confidence, 74)
+  if (results.decision === 'rejected') confidence = Math.min(confidence, 45)
+
+  return Math.max(0, Math.min(100, Math.round(confidence)))
+}
+
 function getDocumentGenuinenessLabel(documentResult, results) {
   if (documentResult.tamperingDetected === true) return 'Suspicious'
   if ((results.breakdown?.documentAuthenticityRisk || 0) >= 15) return 'Needs Review'
@@ -386,6 +408,8 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
   const idNumberMatchLabel = getIdNumberMatchLabel(kycData.customerInfo, kycData.documentResult)
   const documentConfidenceLabel = getDocumentConfidenceLabel(kycData.documentResult.confidenceScore)
   const documentGenuinenessLabel = getDocumentGenuinenessLabel(kycData.documentResult, results)
+  const overallVerificationConfidence = calculateOverallVerificationConfidence(results)
+  const overallConfidenceLabel = getDocumentConfidenceLabel(overallVerificationConfidence)
 
   return (
     <StepCanvas currentStep={4}>
@@ -525,6 +549,12 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
                 <p className="text-xs text-gray-500">ID Number Match</p>
                 <p className={`font-medium ${idNumberMatchLabel === 'Yes' ? 'text-green-600' : idNumberMatchLabel === 'No' ? 'text-amber-600' : 'text-gray-600'}`}>
                   {idNumberMatchLabel}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Overall Verification Confidence</p>
+                <p className="font-medium text-gray-900">
+                  {overallVerificationConfidence}% <span className="text-gray-500">{overallConfidenceLabel}</span>
                 </p>
               </div>
               <div>
