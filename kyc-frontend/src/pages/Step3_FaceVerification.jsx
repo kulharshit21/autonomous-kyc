@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import ProgressBar from '../components/ProgressBar'
 import FaceCompare from '../components/FaceCompare'
 import LoadingSpinner from '../components/LoadingSpinner'
+import StepCanvas from '../components/StepCanvas'
 import { apiClient } from '../utils/apiClient'
 
 export default function Step3_FaceVerification({ kycData, updateKycData }) {
@@ -36,7 +36,7 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
     const handleLoadedMetadata = async () => {
       try {
         await video.play()
-      } catch (error) {
+      } catch (playError) {
         setCameraError('Camera started but the preview could not play. Try Chrome or Edge and make sure camera permission is allowed.')
       }
     }
@@ -170,33 +170,49 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ProgressBar currentStep={3} />
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Face Verification</h1>
-          <p className="text-gray-600 text-sm mb-6">
+    <StepCanvas currentStep={3}>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="animate-card-rise rounded-[30px] border border-slate-200/70 bg-slate-950 p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Face Verification
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold">Confirm the live selfie</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                We compare the live capture with the document photo and keep liveness signals in the same verification flow.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Keep your face centered and well lit
+            </div>
+          </div>
+        </div>
+
+        <div className="animate-card-rise rounded-[30px] border border-white/70 bg-white/90 p-8 shadow-[0_22px_60px_rgba(15,23,42,0.08)] backdrop-blur-md">
+          <h2 className="text-2xl font-bold text-slate-950 mb-1">Face Verification</h2>
+          <p className="text-slate-600 text-sm mb-6">
             We&apos;ll compare your live selfie with the photo on your ID document.
           </p>
 
           <div className="space-y-5">
             {!cameraActive && !selfiePreviewURL && (
               <div className="flex flex-col items-center gap-4 py-6">
-                <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center text-4xl font-semibold text-blue-600">
+                <div className="animate-soft-pulse flex h-24 w-24 items-center justify-center rounded-full bg-slate-950 text-3xl font-semibold text-white shadow-[0_18px_40px_rgba(15,23,42,0.16)]">
                   CAM
                 </div>
-                <p className="text-gray-600 text-sm text-center max-w-sm">
+                <p className="max-w-sm text-center text-sm text-slate-600">
                   Start the camera and keep your face centered, well lit, and clearly visible.
                 </p>
                 {cameraError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg w-full text-center">
+                  <div className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-center text-sm text-red-700">
                     {cameraError}
                   </div>
                 )}
                 <button
                   onClick={startCamera}
                   disabled={startingCamera}
-                  className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold px-8 py-3 rounded-lg transition-colors"
+                  className="rounded-2xl bg-slate-950 px-8 py-3.5 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800 disabled:bg-slate-500"
                 >
                   {startingCamera ? 'Starting Camera...' : 'Start Camera'}
                 </button>
@@ -205,35 +221,35 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
 
             {cameraActive && (
               <div className="flex flex-col items-center gap-4">
-                <div className="relative w-full max-w-sm">
+                <div className="relative w-full max-w-sm overflow-hidden rounded-[26px] border border-slate-200 bg-slate-950 p-2 shadow-[0_18px_44px_rgba(15,23,42,0.16)]">
                   <video
                     ref={videoRef}
                     autoPlay
                     playsInline
                     muted
-                    className="w-full rounded-xl border-2 border-blue-400 shadow-md bg-black object-cover"
+                    className="w-full rounded-[20px] bg-black object-cover"
                   />
-                  <div className="absolute bottom-3 left-0 right-0 flex justify-center">
-                    <div className="bg-black/70 text-white text-xs px-3 py-1.5 rounded-full">
+                  <div className="absolute bottom-5 left-0 right-0 flex justify-center">
+                    <div className="rounded-full bg-black/72 px-3 py-1.5 text-xs text-white">
                       Blink twice and look directly at the camera
                     </div>
                   </div>
                 </div>
                 {cameraError && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg w-full">
+                  <div className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {cameraError}
                   </div>
                 )}
-                <div className="flex gap-3 w-full max-w-sm">
+                <div className="flex w-full max-w-sm gap-3">
                   <button
                     onClick={stopCamera}
-                    className="flex-1 border border-gray-300 text-gray-700 font-medium py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex-1 rounded-2xl border border-slate-300 py-3 text-slate-700 font-medium transition-colors hover:bg-slate-50"
                   >
                     Stop Camera
                   </button>
                   <button
                     onClick={captureFrame}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+                    className="flex-1 rounded-2xl bg-slate-950 py-3 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                   >
                     Capture Selfie
                   </button>
@@ -246,25 +262,29 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
                 <img
                   src={selfiePreviewURL}
                   alt="Captured selfie"
-                  className="w-48 h-48 object-cover rounded-xl border-2 border-gray-200 shadow-sm"
+                  className="h-48 w-48 rounded-[24px] border border-slate-200 object-cover shadow-[0_18px_44px_rgba(15,23,42,0.12)]"
                 />
                 {error && (
-                  <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg w-full">
+                  <div className="w-full rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                     {error}
                   </div>
                 )}
-                {loading && <LoadingSpinner message="Comparing faces with Mistral Pixtral..." />}
+                {loading && (
+                  <div className="w-full rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
+                    <LoadingSpinner message="Comparing faces with Mistral Pixtral..." />
+                  </div>
+                )}
                 {!loading && (
-                  <div className="flex gap-3 w-full">
+                  <div className="flex w-full gap-3">
                     <button
                       onClick={handleRetake}
-                      className="flex-1 border border-gray-300 text-gray-700 font-medium py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="flex-1 rounded-2xl border border-slate-300 py-3 text-slate-700 font-medium transition-colors hover:bg-slate-50"
                     >
                       Retake
                     </button>
                     <button
                       onClick={handleVerifyFace}
-                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+                      className="flex-1 rounded-2xl bg-slate-950 py-3 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                     >
                       Verify Face
                     </button>
@@ -275,15 +295,17 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
 
             {faceResult && (
               <div className="space-y-5">
-                <FaceCompare
-                  idImageBase64={idImageBase64}
-                  selfieBase64={selfieBase64}
-                  matchScore={faceResult.matchScore}
-                  verificationPassed={faceResult.verificationPassed}
-                />
+                <div className="rounded-[28px] border border-slate-200 bg-white/80 p-4">
+                  <FaceCompare
+                    idImageBase64={idImageBase64}
+                    selfieBase64={selfieBase64}
+                    matchScore={faceResult.matchScore}
+                    verificationPassed={faceResult.verificationPassed}
+                  />
+                </div>
 
                 {faceResult.reasoning && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
                     <span className="font-medium">AI Assessment: </span>
                     {faceResult.reasoning}
                   </div>
@@ -292,13 +314,13 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
                 <div className="flex gap-3">
                   <button
                     onClick={handleRetake}
-                    className="flex-1 border border-gray-300 text-gray-700 font-medium py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex-1 rounded-2xl border border-slate-300 py-3 text-slate-700 font-medium transition-colors hover:bg-slate-50"
                   >
                     Retake
                   </button>
                   <button
                     onClick={handleConfirm}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+                    className="flex-1 rounded-2xl bg-slate-950 py-3 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                   >
                     Continue to Results
                   </button>
@@ -308,6 +330,6 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
           </div>
         </div>
       </div>
-    </div>
+    </StepCanvas>
   )
 }

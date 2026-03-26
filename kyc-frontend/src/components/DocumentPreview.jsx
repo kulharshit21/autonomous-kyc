@@ -1,4 +1,13 @@
 export default function DocumentPreview({ documentResult, imageBase64List = [], fileNames = [] }) {
+  const confidence = Number(documentResult.confidenceScore) || 0
+  const confidenceLabel = confidence >= 90
+    ? 'Excellent'
+    : confidence >= 75
+      ? 'High'
+      : confidence >= 60
+        ? 'Moderate'
+        : 'Low'
+
   const fields = [
     { label: 'Document Type', value: documentResult.documentType },
     { label: 'Full Name', value: documentResult.extractedName },
@@ -55,7 +64,9 @@ export default function DocumentPreview({ documentResult, imageBase64List = [], 
         ))}
         <div>
           <p className="text-xs text-gray-500 font-medium">Document Read Confidence</p>
-          <p className="text-sm text-gray-900 font-semibold">{documentResult.confidenceScore}%</p>
+          <p className="text-sm text-gray-900 font-semibold">
+            {confidence}% <span className="text-gray-500 font-medium">· {confidenceLabel}</span>
+          </p>
         </div>
       </div>
     </div>

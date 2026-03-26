@@ -32,6 +32,11 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
     decision = 'review'
   }
 
+  if (documentAuthenticityRisk >= 15 && decision === 'approved') {
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
   return {
     riskScore,
     riskCategory,
@@ -48,10 +53,16 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
 
 function calcDocumentRisk(documentResult) {
   let risk = 0
-  if (documentResult.isAuthentic === false) return 30
-  if (documentResult.tamperingDetected === true) risk += 15
+  if (documentResult.tamperingDetected === true) return 30
 
   const confidence = Number(documentResult.confidenceScore) || 0
+
+  if (documentResult.isAuthentic === false) {
+    if (confidence >= 70) return 8
+    if (confidence >= 50) return 15
+    return 22
+  }
+
   if (confidence < 45) risk += 10
   else if (confidence < 65) risk += 5
 

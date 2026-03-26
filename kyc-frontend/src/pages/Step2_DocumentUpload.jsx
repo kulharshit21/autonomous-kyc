@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import ProgressBar from '../components/ProgressBar'
 import DocumentPreview from '../components/DocumentPreview'
+import StepCanvas from '../components/StepCanvas'
 import VerificationChecklistLoader from '../components/VerificationChecklistLoader'
 import { readFileAsBase64, resizeImageIfNeeded } from '../utils/imageUtils'
 import { apiClient } from '../utils/apiClient'
@@ -114,18 +114,34 @@ export default function Step2_DocumentUpload({ updateKycData }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ProgressBar currentStep={2} />
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8">
-          <h1 className="text-2xl font-bold text-gray-900 mb-1">Document Upload</h1>
-          <p className="text-gray-600 text-sm mb-6">
+    <StepCanvas currentStep={2}>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="animate-card-rise rounded-[30px] border border-slate-200/70 bg-slate-950 p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Document Verification
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold">Upload your government ID</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                Add one or more clear document images or a PDF. We will convert, parse, and verify the fields before face matching.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Supports JPG, PNG, and PDF
+            </div>
+          </div>
+        </div>
+
+        <div className="animate-card-rise rounded-[30px] border border-white/70 bg-white/90 p-8 shadow-[0_22px_60px_rgba(15,23,42,0.08)] backdrop-blur-md">
+          <h2 className="text-2xl font-bold text-slate-950 mb-1">Document Upload</h2>
+          <p className="text-slate-600 text-sm mb-6">
             Upload one or more clear photos or scans of your government-issued ID. This works well for passport front pages, back pages, and additional supporting pages.
           </p>
 
           <div className="space-y-5">
             <div>
-              <label htmlFor="documentFile" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="documentFile" className="block text-sm font-semibold text-slate-800 mb-2">
                 Select ID Document Images <span className="text-red-500">*</span>
               </label>
               <input
@@ -134,29 +150,29 @@ export default function Step2_DocumentUpload({ updateKycData }) {
                 multiple
                 accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf"
                 onChange={handleFileChange}
-                className="w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100 cursor-pointer border border-gray-300 rounded-lg p-1"
+                className="w-full rounded-2xl border border-slate-200 bg-white/95 p-1 text-sm text-slate-600 shadow-sm file:mr-4 file:rounded-xl file:border-0 file:bg-slate-950 file:px-4 file:py-2.5 file:font-medium file:text-white hover:file:bg-slate-800 cursor-pointer"
               />
-              <p className="text-xs text-gray-400 mt-1">Accepted formats: JPG, JPEG, PNG, PDF · Up to 4 files</p>
+              <p className="mt-2 text-xs text-slate-400">Accepted formats: JPG, JPEG, PNG, PDF · Up to 4 files</p>
             </div>
 
             {previewItems.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {previewItems.map((item, index) => (
-                  <div key={`${item.name}-${index}`} className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                  <div key={`${item.name}-${index}`} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 shadow-sm">
                     {item.previewURL ? (
                       <img
                         src={item.previewURL}
                         alt={item.name}
-                        className="w-14 h-14 object-cover rounded-lg border border-gray-200"
+                        className="h-14 w-14 rounded-xl border border-slate-200 object-cover"
                       />
                     ) : (
-                      <div className="w-14 h-14 rounded-lg border border-gray-200 bg-white flex items-center justify-center text-xs text-gray-500">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl border border-slate-200 bg-white text-xs font-medium text-slate-500">
                         PDF
                       </div>
                     )}
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{item.name}</p>
-                      <p className="text-xs text-gray-500">{item.sizeLabel}</p>
+                      <p className="truncate text-sm font-semibold text-slate-800">{item.name}</p>
+                      <p className="text-xs text-slate-500">{item.sizeLabel}</p>
                     </div>
                   </div>
                 ))}
@@ -164,22 +180,21 @@ export default function Step2_DocumentUpload({ updateKycData }) {
             )}
 
             {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
               </div>
             )}
 
             {loading && (
-              <VerificationChecklistLoader
-                hasPDF={hasPDFSelection}
-                fileCount={selectedFiles.length}
-              />
+              <div className="rounded-[28px] border border-slate-200 bg-slate-50/80 p-5">
+                <VerificationChecklistLoader hasPDF={hasPDFSelection} fileCount={selectedFiles.length} />
+              </div>
             )}
 
             {!loading && selectedFiles.length > 0 && !documentResult && (
               <button
                 onClick={handleVerify}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+                className="w-full rounded-2xl bg-slate-950 py-3.5 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
               >
                 Verify Document
               </button>
@@ -187,8 +202,8 @@ export default function Step2_DocumentUpload({ updateKycData }) {
 
             {documentResult && (
               <div className="space-y-5">
-                <div className="border border-gray-200 rounded-xl p-4">
-                  <h2 className="text-sm font-semibold text-gray-700 mb-3">Extracted Information</h2>
+                <div className="rounded-[28px] border border-slate-200 bg-white/80 p-4">
+                  <h3 className="mb-3 text-sm font-semibold text-slate-700">Extracted Information</h3>
                   <DocumentPreview
                     documentResult={documentResult}
                     imageBase64List={processedImages}
@@ -197,7 +212,7 @@ export default function Step2_DocumentUpload({ updateKycData }) {
                 </div>
 
                 {documentResult.authenticityReason && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-600">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-slate-600">
                     <span className="font-medium">AI Assessment: </span>
                     {documentResult.authenticityReason}
                   </div>
@@ -206,13 +221,13 @@ export default function Step2_DocumentUpload({ updateKycData }) {
                 <div className="flex gap-3">
                   <button
                     onClick={handleReset}
-                    className="flex-1 border border-gray-300 text-gray-700 font-medium py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex-1 rounded-2xl border border-slate-300 py-3 text-slate-700 font-medium transition-colors hover:bg-slate-50"
                   >
                     Re-upload
                   </button>
                   <button
                     onClick={handleConfirm}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors"
+                    className="flex-1 rounded-2xl bg-slate-950 py-3 text-white font-semibold shadow-[0_14px_30px_rgba(15,23,42,0.18)] transition-all hover:-translate-y-0.5 hover:bg-slate-800"
                   >
                     Confirm and Continue
                   </button>
@@ -222,6 +237,6 @@ export default function Step2_DocumentUpload({ updateKycData }) {
           </div>
         </div>
       </div>
-    </div>
+    </StepCanvas>
   )
 }

@@ -31,6 +31,8 @@ Rules:
 - If one image is unclear but another is clearer, prefer the clearer image.
 - Extract the full legal name exactly as visible on the document, including middle names and surnames when present.
 - For passports, identify the document as "Passport" when appropriate and extract the passport number, full name, date of birth, and expiry date from the passport identity page or MRZ.
+- Mark "isAuthentic" as false only when there is a strong reason to suspect forgery, tampering, manipulation, or a clearly invalid document.
+- If the document looks real but the image quality is weak, keep "isAuthentic" as true and explain the quality issue in "authenticityReason" instead of calling it fake or suspicious.
 - Use an empty string only when the information is genuinely not visible in any provided image.
 - Do not copy placeholder values from this schema.`
 
@@ -118,6 +120,66 @@ function hasSuspiciousReason(parsed) {
   ].some(keyword => reason.includes(keyword))
 }
 
+function hasQualityIssueReason(parsed) {
+  const reason = (parsed.authenticityReason || '').toLowerCase()
+
+  return [
+    'unclear',
+    'blurry',
+    'blur',
+    'low quality',
+    'low-resolution',
+    'low resolution',
+    'glare',
+    'shadow',
+    'cropped',
+    'compression',
+    'partially visible',
+    'not clear'
+  ].some(keyword => reason.includes(keyword))
+}
+
+function hasStrongForgerySignal(parsed) {
+  const reason = (parsed.authenticityReason || '').toLowerCase()
+
+  return [
+    'forg',
+    'fake',
+    'tamper',
+    'alter',
+    'manipulat',
+    'edited',
+    'counterfeit'
+  ].some(keyword => reason.includes(keyword))
+}
+
+function deriveDocumentAuthenticity(parsed) {
+  const modelAuthentic = parsed.isAuthentic === true
+  const strongForgerySignal = hasStrongForgerySignal(parsed)
+  const fieldCount = getFilledFieldCount(parsed)
+  const hasCoreIdentityFields = Boolean(
+    parsed.documentType &&
+    parsed.extractedName &&
+    parsed.dateOfBirth &&
+    parsed.idNumber
+  )
+  const modelConfidence = clampScore(parsed.confidenceScore)
+
+  if (parsed.tamperingDetected === true || strongForgerySignal) {
+    return false
+  }
+
+  if (modelAuthentic) {
+    return true
+  }
+
+  if (hasCoreIdentityFields && fieldCount >= 4 && modelConfidence >= 20) {
+    return true
+  }
+
+  return false
+}
+
 function calculateDocumentConfidence(parsed, imageCount) {
   const fieldCount = getFilledFieldCount(parsed)
   const hasName = Boolean(parsed.extractedName && parsed.extractedName.trim())
@@ -127,17 +189,20 @@ function calculateDocumentConfidence(parsed, imageCount) {
   const hasExpiry = Boolean(parsed.expiryDate && parsed.expiryDate.trim())
   const isPassport = (parsed.documentType || '').toLowerCase().includes('passport')
   const suspiciousReason = hasSuspiciousReason(parsed)
+  const qualityIssueReason = hasQualityIssueReason(parsed)
+  const effectiveAuthentic = deriveDocumentAuthenticity(parsed)
 
   let derivedConfidence = 12
 
-  if (parsed.isAuthentic === true) {
+  if (effectiveAuthentic) {
     derivedConfidence += 18
   } else {
     derivedConfidence -= 12
   }
 
   if (parsed.tamperingDetected === true) derivedConfidence -= 28
-  if (suspiciousReason) derivedConfidence -= 18
+  if (suspiciousReason) derivedConfidence -= 12
+  if (qualityIssueReason) derivedConfidence -= 8
 
   derivedConfidence += Math.min(24, fieldCount * 4)
 
@@ -159,8 +224,16 @@ function calculateDocumentConfidence(parsed, imageCount) {
   const modelConfidence = clampScore(parsed.confidenceScore)
   const blendedConfidence = clampScore(Math.round((derivedConfidence * 0.75) + (modelConfidence * 0.25)))
 
-  if (parsed.isAuthentic === false || parsed.tamperingDetected === true || suspiciousReason) {
+  if (!effectiveAuthentic || parsed.tamperingDetected === true) {
     return Math.min(blendedConfidence, 40)
+  }
+
+  if (qualityIssueReason && fieldCount >= 4) {
+    return Math.max(blendedConfidence, 60)
+  }
+
+  if (fieldCount >= 4) {
+    return Math.max(blendedConfidence, 68)
   }
 
   return blendedConfidence
@@ -304,6 +377,7 @@ async function verifyDocument(input, mimeType) {
 
   const text = await callMistral(contentParts)
   const parsed = extractJSON(text)
+  const isAuthentic = deriveDocumentAuthenticity(parsed)
   const confidenceScore = calculateDocumentConfidence(parsed, processedDocuments.length)
 
   return {
@@ -313,7 +387,7 @@ async function verifyDocument(input, mimeType) {
     idNumber: parsed.idNumber || '',
     address: parsed.address || '',
     expiryDate: parsed.expiryDate || '',
-    isAuthentic: parsed.isAuthentic ?? false,
+    isAuthentic,
     tamperingDetected: parsed.tamperingDetected ?? false,
     confidenceScore,
     authenticityReason: parsed.authenticityReason || '',

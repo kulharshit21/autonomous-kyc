@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import ProgressBar from '../components/ProgressBar'
 import DecisionBadge from '../components/DecisionBadge'
 import RiskMeter from '../components/RiskMeter'
+import StepCanvas from '../components/StepCanvas'
 import { apiClient } from '../utils/apiClient'
 
 const BREAKDOWN_LABELS = {
@@ -131,13 +131,16 @@ function calculateLocalResults(kycData) {
   const customerInfo = kycData.customerInfo || {}
 
   let documentAuthenticityRisk = 0
-  if (documentResult.isAuthentic === false) {
+  const documentConfidence = Number(documentResult.confidenceScore) || 0
+  if (documentResult.tamperingDetected === true) {
     documentAuthenticityRisk = 30
+  } else if (documentResult.isAuthentic === false) {
+    if (documentConfidence >= 70) documentAuthenticityRisk = 8
+    else if (documentConfidence >= 50) documentAuthenticityRisk = 15
+    else documentAuthenticityRisk = 22
   } else {
-    if (documentResult.tamperingDetected === true) documentAuthenticityRisk += 15
-    const confidence = Number(documentResult.confidenceScore) || 0
-    if (confidence < 45) documentAuthenticityRisk += 10
-    else if (confidence < 65) documentAuthenticityRisk += 5
+    if (documentConfidence < 45) documentAuthenticityRisk += 10
+    else if (documentConfidence < 65) documentAuthenticityRisk += 5
   }
 
   const matchScore = Number(faceResult.matchScore) || 0
@@ -212,6 +215,11 @@ function calculateLocalResults(kycData) {
     decision = 'review'
   }
 
+  if (documentAuthenticityRisk >= 15 && decision === 'approved') {
+    riskCategory = 'medium'
+    decision = 'review'
+  }
+
   const base = {
     riskScore,
     riskCategory,
@@ -265,6 +273,14 @@ function buildDecisionReasons(results) {
 
 function getIdentityMatchLabel(results) {
   return (results.breakdown?.dataConsistencyRisk || 0) >= 8 ? 'No' : 'Yes'
+}
+
+function getDocumentConfidenceLabel(score) {
+  const confidence = Number(score) || 0
+  if (confidence >= 90) return 'Excellent'
+  if (confidence >= 75) return 'High'
+  if (confidence >= 60) return 'Moderate'
+  return 'Low'
 }
 
 export default function Step4_Results({ kycData, updateKycData, resetKycData }) {
@@ -342,13 +358,30 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
   const identityMatchLabel = getIdentityMatchLabel(results)
   const nameMatchLabel = getNameMatchLabel(kycData.customerInfo, kycData.documentResult)
   const idNumberMatchLabel = getIdNumberMatchLabel(kycData.customerInfo, kycData.documentResult)
+  const documentConfidenceLabel = getDocumentConfidenceLabel(kycData.documentResult.confidenceScore)
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <ProgressBar currentStep={4} />
-      <div className="max-w-2xl mx-auto px-4 py-10">
-        <div className="space-y-5">
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center space-y-3">
+    <StepCanvas currentStep={4}>
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="animate-card-rise rounded-[30px] border border-slate-200/70 bg-slate-950 p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                Final Review
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold">Verification results</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                This final screen combines document analysis, face verification, liveness, and consistency checks into one decision summary.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
+              Compliance-style summary
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-5 animate-card-rise">
+          <div className="rounded-[30px] border border-white/70 bg-white/90 p-8 text-center space-y-3 shadow-[0_22px_60px_rgba(15,23,42,0.08)] backdrop-blur-md">
             <h1 className="text-2xl font-bold text-gray-900">Verification Complete</h1>
             <p className="text-gray-500 text-sm">
               {kycData.customerInfo.fullName} - {kycData.documentResult.documentType}
@@ -359,28 +392,28 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
           </div>
 
           {warning && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3 rounded-lg">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
               {warning}
             </div>
           )}
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Risk Score</h2>
             <RiskMeter riskScore={results.riskScore} riskCategory={results.riskCategory} />
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Decision Reasons</h2>
             <div className="space-y-2">
               {decisionReasons.map((reason, index) => (
-                <div key={`${reason}-${index}`} className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3">
+                <div key={`${reason}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-gray-700">
                   {reason}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-4">Score Breakdown</h2>
             <div className="space-y-3">
               {Object.entries(BREAKDOWN_LABELS).map(([key, { label, max }]) => {
@@ -403,14 +436,14 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
             </div>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Compliance Assessment</h2>
             <p className="text-gray-700 text-sm leading-relaxed italic">
               "{results.explanation}"
             </p>
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
+          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Verification Summary</h2>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
@@ -469,19 +502,21 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
               </div>
               <div>
                 <p className="text-xs text-gray-500">Document Read Confidence</p>
-                <p className="font-medium text-gray-900">{kycData.documentResult.confidenceScore}%</p>
+                <p className="font-medium text-gray-900">
+                  {kycData.documentResult.confidenceScore}% <span className="text-gray-500">{documentConfidenceLabel}</span>
+                </p>
               </div>
             </div>
           </div>
 
           <button
             onClick={handleStartNew}
-            className="w-full border-2 border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white font-semibold py-3 rounded-lg transition-colors"
+            className="w-full rounded-2xl border-2 border-slate-950 py-3.5 text-slate-950 font-semibold transition-colors hover:bg-slate-950 hover:text-white"
           >
             Start New Verification
           </button>
         </div>
       </div>
-    </div>
+    </StepCanvas>
   )
 }
