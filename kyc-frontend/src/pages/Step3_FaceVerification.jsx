@@ -84,26 +84,96 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
     setStage('idle')
   }, [])
 
+  const buildVerificationPayload = useCallback(async ({
+    idMinDimension,
+    selfieMinDimension,
+    frameMinDimension,
+    idQuality,
+    selfieQuality,
+    frameQuality
+  }) => {
+    const frames = livenessFrames.slice(0, 6)
+    const enhancedId = await enhanceImageForVerification(idImageBase64, {
+      minDimension: idMinDimension,
+      brightness: 1.03,
+      contrast: 1.1,
+      saturate: 1.02,
+      quality: idQuality
+    })
+    const enhancedSelfie = await enhanceImageForVerification(selfieBase64, {
+      minDimension: selfieMinDimension,
+      brightness: 1.03,
+      contrast: 1.08,
+      saturate: 1.02,
+      quality: selfieQuality
+    })
+    const enhancedFrames = await Promise.all(
+      frames.map((frame) =>
+        enhanceImageForVerification(frame, {
+          minDimension: frameMinDimension,
+          brightness: 1.02,
+          contrast: 1.06,
+          saturate: 1.01,
+          quality: frameQuality
+        })
+      )
+    )
+
+    return {
+      idImageBase64: enhancedId,
+      selfieBase64: enhancedSelfie,
+      livenessFrames: enhancedFrames,
+      liveFrameQualityScores: frameQualityScores,
+      primaryFrameStep,
+      primaryFrameQualityScore
+    }
+  }, [frameQualityScores, idImageBase64, livenessFrames, primaryFrameQualityScore, primaryFrameStep, selfieBase64])
+
   const handleVerifyFace = async () => {
     if (!selfieBase64 || !idImageBase64) { setError('Missing required images.'); return }
     if (!idHasPhoto) { setError('No photo in ID. Go back and upload the front side.'); return }
     try {
       setStage('verifying'); setError('')
-      const eId = await enhanceImageForVerification(idImageBase64, { minDimension: 1400, brightness: 1.03, contrast: 1.12, saturate: 1.03, quality: 0.95 })
-      const eSelf = await enhanceImageForVerification(selfieBase64, { minDimension: 1200, brightness: 1.03, contrast: 1.1, saturate: 1.02, quality: 0.95 })
-      const enhancedFrames = await Promise.all(
-        livenessFrames.slice(0, 6).map(frame =>
-          enhanceImageForVerification(frame, { minDimension: 960, brightness: 1.02, contrast: 1.08, saturate: 1.02, quality: 0.9 })
-        )
-      )
-      const result = await apiClient.post('/api/kyc/verify-face', {
-        idImageBase64: eId,
-        selfieBase64: eSelf,
-        livenessFrames: enhancedFrames,
-        liveFrameQualityScores: frameQualityScores,
-        primaryFrameStep,
-        primaryFrameQualityScore
-      })
+      const requestProfiles = [
+        {
+          idMinDimension: 1200,
+          selfieMinDimension: 1040,
+          frameMinDimension: 760,
+          idQuality: 0.9,
+          selfieQuality: 0.9,
+          frameQuality: 0.84
+        },
+        {
+          idMinDimension: 960,
+          selfieMinDimension: 900,
+          frameMinDimension: 640,
+          idQuality: 0.82,
+          selfieQuality: 0.82,
+          frameQuality: 0.76
+        }
+      ]
+
+      let result = null
+      let lastError = null
+
+      for (let index = 0; index < requestProfiles.length; index += 1) {
+        try {
+          const payload = await buildVerificationPayload(requestProfiles[index])
+          result = await apiClient.post('/api/kyc/verify-face', payload)
+          break
+        } catch (err) {
+          lastError = err
+          const retryable = /Unable to reach backend|Backend returned an invalid response|Failed to fetch|NetworkError|Load failed/i.test(err?.message || '')
+          if (!retryable || index === requestProfiles.length - 1) {
+            throw err
+          }
+        }
+      }
+
+      if (!result) {
+        throw lastError || new Error('Face verification failed.')
+      }
+
       setFaceResult(result)
       setStage('result')
     } catch (err) { setError(err.message || 'Face verification failed.'); setStage('preview') }
