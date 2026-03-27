@@ -2,11 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 
 function buildSteps() {
   return [
-    'Preparing the captured selfie for comparison',
-    'Locating the portrait inside the uploaded ID',
-    'Comparing selfie features with the ID photo',
-    'Checking liveness and same-person confidence',
-    'Finalizing face verification result'
+    'Preparing the captured selfie',
+    'Locating the portrait in the ID',
+    'Comparing selfie with ID photo',
+    'Checking liveness signals',
+    'Finalizing face verification'
   ]
 }
 
@@ -16,70 +16,41 @@ export default function FaceVerificationChecklistLoader() {
 
   useEffect(() => {
     setActiveIndex(0)
-
     const interval = setInterval(() => {
-      setActiveIndex((current) => (current < steps.length - 1 ? current + 1 : current))
+      setActiveIndex(c => (c < steps.length - 1 ? c + 1 : c))
     }, 900)
-
     return () => clearInterval(interval)
   }, [steps])
 
   return (
-    <div className="rounded-2xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-sky-50 p-6 shadow-sm">
+    <div className="space-y-4">
       <div className="flex items-start gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/90 border-t-transparent" />
+        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[var(--teal)] text-white">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/80 border-t-transparent" />
         </div>
-
-        <div className="flex-1">
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700">
-            Face Check In Progress
-          </p>
-          <h3 className="mt-1 text-lg font-semibold text-gray-900">
-            Comparing the live selfie with the ID portrait
-          </h3>
-          <p className="mt-2 text-sm text-gray-600">
-            We are checking the captured photo step by step so the match result is easier to trust and explain.
-          </p>
-
-          <div className="mt-5 space-y-3">
-            {steps.map((step, index) => {
-              const isDone = index < activeIndex
-              const isCurrent = index === activeIndex
-
-              return (
-                <div
-                  key={step}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all duration-500 ${
-                    isDone
-                      ? 'border-emerald-200 bg-emerald-50'
-                      : isCurrent
-                      ? 'border-violet-200 bg-white shadow-sm'
-                      : 'border-gray-200 bg-white/70'
-                  }`}
-                >
-                  <div
-                    className={`flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold transition-all ${
-                      isDone
-                        ? 'bg-emerald-500 text-white'
-                        : isCurrent
-                        ? 'bg-slate-950 text-white'
-                        : 'bg-gray-200 text-gray-500'
-                    }`}
-                  >
-                    {isDone ? '✓' : isCurrent ? '…' : index + 1}
-                  </div>
-                  <div className="flex-1">
-                    <p className={`text-sm font-medium ${isDone || isCurrent ? 'text-gray-900' : 'text-gray-500'}`}>
-                      {step}
-                    </p>
-                  </div>
-                  {isCurrent && <div className="h-2.5 w-2.5 animate-pulse rounded-full bg-violet-500" />}
-                </div>
-              )
-            })}
-          </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[var(--teal)]">Face Check In Progress</p>
+          <h3 className="mt-1 text-base font-semibold text-[var(--charcoal)]">Comparing selfie with ID portrait</h3>
         </div>
+      </div>
+
+      <div className="space-y-2">
+        {steps.map((step, i) => {
+          const done = i < activeIndex, cur = i === activeIndex
+          return (
+            <div key={step} className={`flex items-center gap-3 rounded-xl border px-4 py-3 transition-all duration-400 ${
+              done ? 'border-emerald-200 bg-emerald-50' : cur ? 'border-[var(--teal)]/30 bg-[var(--teal-subtle)]' : 'border-[var(--warm-border)] bg-[var(--warm-white)]'
+            }`}>
+              <div className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${
+                done ? 'bg-emerald-500 text-white' : cur ? 'bg-[var(--teal)] text-white' : 'bg-[var(--cream-dark)] text-[var(--stone)]'
+              }`}>
+                {done ? '✓' : cur ? '…' : i + 1}
+              </div>
+              <p className={`text-sm font-medium ${done || cur ? 'text-[var(--charcoal)]' : 'text-[var(--stone)]'}`}>{step}</p>
+              {cur && <div className="ml-auto h-2 w-2 animate-pulse rounded-full bg-[var(--teal)]" />}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

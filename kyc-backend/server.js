@@ -3,17 +3,44 @@ require('dotenv').config()
 
 const express = require('express')
 const cors = require('cors')
+const helmet = require('helmet')
+const rateLimit = require('express-rate-limit')
 const kycRoutes = require('./routes/kyc')
 
 const app = express()
 const PORT = process.env.PORT || 3001
 
-// Middleware
-app.use(cors({ origin: 'http://localhost:5173' }))
-app.use(express.json({ limit: '10mb' }))
+// ── Security: HTTP headers ──
+app.use(helmet())
 
-// Routes
-app.use('/api/kyc', kycRoutes)
+// ── Security: CORS (locked to configured origin) ──
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
+app.use(cors({ origin: CORS_ORIGIN }))
+
+// ── Security: General rate limiter ──
+const generalLimiter = rateLimit({
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_MAX) || 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests. Please try again later.' }
+})
+app.use(generalLimiter)
+
+// ── Security: Strict rate limiter for KYC endpoints ──
+const kycLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'KYC request limit reached. Please try again later.' }
+})
+
+// Middleware
+app.use(express.json({ limit: '5mb' }))
+
+// Routes (with strict rate limiting)
+app.use('/api/kyc', kycLimiter, kycRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -33,6 +60,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`KYC Backend running on http://localhost:${PORT}`)
-  console.log(`Mistral API key loaded: ${process.env.MISTRAL_API_KEY ? 'YES' : 'NO - check your .env'}`)
-  console.log(`Ollama URL: ${process.env.OLLAMA_BASE_URL}`)
+  console.log(`CORS origin: ${CORS_ORIGIN}`)
+  console.log(`Rate limit: ${process.env.RATE_LIMIT_MAX || 100} req / ${Math.round((Number(process.env.RATE_LIMIT_WINDOW_MS) || 900000) / 60000)} min`)
 })

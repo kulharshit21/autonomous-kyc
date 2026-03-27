@@ -1,29 +1,15 @@
-// DecisionBadge.jsx — approved / review / rejected badge
 const CONFIG = {
-  approved: {
-    label: 'Approved',
-    classes: 'bg-green-100 text-green-700 border border-green-300',
-    icon: '✅'
-  },
-  review: {
-    label: 'Manual Review Required',
-    classes: 'bg-amber-100 text-amber-700 border border-amber-300',
-    icon: '⚠️'
-  },
-  rejected: {
-    label: 'Rejected',
-    classes: 'bg-red-100 text-red-700 border border-red-300',
-    icon: '❌'
-  }
+  approved: { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', icon: '✅' },
+  review: { label: 'Manual Review', cls: 'bg-amber-50 text-amber-700 border border-amber-200', icon: '⚠️' },
+  rejected: { label: 'Rejected', cls: 'bg-red-50 text-red-700 border border-red-200', icon: '❌' }
 }
 
 export default function DecisionBadge({ decision }) {
-  const config = CONFIG[decision] || CONFIG.review
-
+  const c = CONFIG[decision] || CONFIG.review
   return (
-    <div className={`inline-flex items-center gap-2 px-5 py-3 rounded-full text-base font-semibold ${config.classes}`}>
-      <span>{config.icon}</span>
-      <span>{config.label}</span>
+    <div className={`animate-badge-pop inline-flex items-center gap-2 px-6 py-3.5 rounded-full text-base font-bold ${c.cls}`}>
+      <span className="text-lg">{c.icon}</span>
+      <span>{c.label}</span>
     </div>
   )
 }

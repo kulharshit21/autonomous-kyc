@@ -345,7 +345,7 @@ function calculateFaceMatchScore(parsed) {
     adjustedScore = Math.min(adjustedScore, 68)
   }
 
-  return clampScore(adjustedScore)
+  return Math.max(0, Math.min(100, Math.round(clampScore(adjustedScore))))
 }
 
 function calculateStrictFaceMatchScore(primaryParsed, strictParsed) {
@@ -674,7 +674,7 @@ async function verifyDocument(input, mimeType) {
   }
 }
 
-async function verifyFace(idImageBase64, selfieBase64) {
+async function verifyFace(idImageBase64, selfieBase64, livenessFrames = []) {
   const contentParts = [
     {
       type: 'image_url',
@@ -687,12 +687,26 @@ async function verifyFace(idImageBase64, selfieBase64) {
       image_url: {
         url: `data:image/jpeg;base64,${selfieBase64}`
       }
-    },
-    {
-      type: 'text',
-      text: PROMPT_G002
     }
   ]
+
+  // Include up to 3 liveness frames for better face comparison
+  const framesToUse = livenessFrames.slice(0, 3)
+  for (const frame of framesToUse) {
+    contentParts.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${frame}`
+      }
+    })
+  }
+
+  contentParts.push({
+    type: 'text',
+    text: PROMPT_G002 + (framesToUse.length > 0
+      ? `\n\nNote: ${framesToUse.length} additional liveness check frames are provided (images 3${framesToUse.length > 1 ? `-${framesToUse.length + 2}` : '+2'}). These show the same person from different angles during a liveness check. Use them alongside the primary selfie (image 2) to improve your confidence in whether the selfie person matches the ID photo (image 1).`
+      : '')
+  })
 
   const text = await callMistral(contentParts)
   const parsed = extractJSON(text)

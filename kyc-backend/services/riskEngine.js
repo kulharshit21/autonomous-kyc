@@ -12,13 +12,13 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
   })
   const expiryRisk = calcExpiryRisk(documentResult)
 
-  let riskScore = Math.min(100, Math.round(
+  let riskScore = Math.max(0, Math.min(100, Math.round(
     documentAuthenticityRisk +
     faceMatchRisk +
     expiryRisk +
     dataConsistencyRisk +
     livenessRisk
-  ))
+  )))
 
   if (dataConsistencyRisk >= 12) {
     riskScore = Math.max(riskScore, 55)
@@ -80,15 +80,15 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
   }
 
   return {
-    riskScore,
+    riskScore: Math.max(0, Math.min(100, Math.round(riskScore))),
     riskCategory,
     decision,
     breakdown: {
-      documentAuthenticityRisk,
-      faceMatchRisk,
-      expiryRisk,
-      dataConsistencyRisk,
-      livenessRisk
+      documentAuthenticityRisk: Math.round(documentAuthenticityRisk),
+      faceMatchRisk: Math.round(faceMatchRisk),
+      expiryRisk: Math.round(expiryRisk),
+      dataConsistencyRisk: Math.round(dataConsistencyRisk),
+      livenessRisk: Math.round(livenessRisk)
     }
   }
 }
@@ -220,23 +220,32 @@ function getNameMismatchRisk(enteredName, extractedName) {
 
   if (enteredTokens.length === 0 || extractedTokens.length === 0) return 0
 
+  // Exact match
+  if (normaliseName(enteredName) === normaliseName(extractedName)) return 0
+
+  // Subset match: all tokens of shorter name exist in longer name
+  // e.g. 'akshit' is a subset of 'akshit ohri' → treat as match
+  const enteredSet = new Set(enteredTokens)
+  const extractedSet = new Set(extractedTokens)
+  const allEnteredInExtracted = enteredTokens.every(t => extractedSet.has(t))
+  const allExtractedInEntered = extractedTokens.every(t => enteredSet.has(t))
+
+  if (allEnteredInExtracted || allExtractedInEntered) return 0
+
   const enteredCore = extractFirstAndLastTokens(enteredTokens)
   const extractedCore = extractFirstAndLastTokens(extractedTokens)
-
   const firstMatches = enteredCore.first && extractedCore.first && enteredCore.first === extractedCore.first
   const lastMatches = enteredCore.last && extractedCore.last && enteredCore.last === extractedCore.last
 
-  if (normaliseName(enteredName) === normaliseName(extractedName)) {
-    return 0
-  }
+  // Both first and last name tokens match — very likely same person
+  if (firstMatches && lastMatches) return 1
 
-  if (firstMatches && lastMatches) {
-    return 1
-  }
+  // Partial overlap — check how many tokens match
+  const commonCount = enteredTokens.filter(t => extractedSet.has(t)).length
+  const minLen = Math.min(enteredTokens.length, extractedTokens.length)
+  if (commonCount >= minLen * 0.5 && (firstMatches || lastMatches)) return 3
 
-  if (lastMatches || firstMatches) {
-    return 8
-  }
+  if (lastMatches || firstMatches) return 5
 
   return 12
 }

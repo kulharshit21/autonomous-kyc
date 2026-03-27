@@ -33,12 +33,15 @@ function isSamePersonName(enteredName, extractedName) {
 
   const extractedSet = new Set(extractedTokens)
   const enteredSet = new Set(enteredTokens)
-  const commonCount = enteredTokens.filter(token => extractedSet.has(token)).length
-  const allEnteredPresent = enteredTokens.every(token => extractedSet.has(token))
-  const allExtractedPresent = extractedTokens.every(token => enteredSet.has(token))
 
+  // Subset match: 'akshit' matches 'akshit ohri'
+  const allEnteredPresent = enteredTokens.every(t => extractedSet.has(t))
+  const allExtractedPresent = extractedTokens.every(t => enteredSet.has(t))
   if (allEnteredPresent || allExtractedPresent) return true
-  return commonCount / Math.min(enteredSet.size, extractedSet.size) >= 0.8
+
+  // Partial overlap
+  const commonCount = enteredTokens.filter(t => extractedSet.has(t)).length
+  return commonCount / Math.min(enteredSet.size, extractedSet.size) >= 0.5
 }
 
 function extractFirstAndLastTokens(tokens) {
@@ -55,23 +58,28 @@ function getNameMismatchRisk(enteredName, extractedName) {
 
   if (enteredTokens.length === 0 || extractedTokens.length === 0) return 0
 
+  // Exact match
+  if (normaliseName(enteredName) === normaliseName(extractedName)) return 0
+
+  // Subset match: 'akshit' in 'akshit ohri' = no risk
+  const enteredSet = new Set(enteredTokens)
+  const extractedSet = new Set(extractedTokens)
+  const allEnteredInExtracted = enteredTokens.every(t => extractedSet.has(t))
+  const allExtractedInEntered = extractedTokens.every(t => enteredSet.has(t))
+  if (allEnteredInExtracted || allExtractedInEntered) return 0
+
   const enteredCore = extractFirstAndLastTokens(enteredTokens)
   const extractedCore = extractFirstAndLastTokens(extractedTokens)
-
   const firstMatches = enteredCore.first && extractedCore.first && enteredCore.first === extractedCore.first
   const lastMatches = enteredCore.last && extractedCore.last && enteredCore.last === extractedCore.last
 
-  if (normaliseName(enteredName) === normaliseName(extractedName)) {
-    return 0
-  }
+  if (firstMatches && lastMatches) return 1
 
-  if (firstMatches && lastMatches) {
-    return 1
-  }
+  const commonCount = enteredTokens.filter(t => extractedSet.has(t)).length
+  const minLen = Math.min(enteredTokens.length, extractedTokens.length)
+  if (commonCount >= minLen * 0.5 && (firstMatches || lastMatches)) return 3
 
-  if (lastMatches || firstMatches) {
-    return 8
-  }
+  if (lastMatches || firstMatches) return 5
 
   return 12
 }
@@ -665,28 +673,22 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
   return (
     <StepCanvas currentStep={4}>
       <div className="mx-auto max-w-4xl space-y-6">
-        <div className="animate-card-rise rounded-[30px] border border-slate-200/70 bg-slate-950 p-6 text-white shadow-[0_24px_70px_rgba(15,23,42,0.16)]">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="animate-card-rise teal-card p-6">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
-                Final Review
-              </p>
-              <h1 className="mt-2 text-3xl font-semibold">Verification results</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-                This final screen combines document analysis, face verification, liveness, and consistency checks into one decision summary.
-              </p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-teal-100/70">Final Review</p>
+              <h1 className="mt-1 text-2xl font-bold">Verification Results</h1>
+              <p className="mt-1 text-sm text-teal-100/80">Document analysis, face verification, liveness, and consistency checks combined.</p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-              Compliance-style summary
-            </div>
+            <div className="rounded-xl bg-white/10 border border-white/15 px-4 py-2.5 text-sm text-teal-50/90">✨ Compliance Summary</div>
           </div>
         </div>
 
-        <div className="space-y-5 animate-card-rise">
-          <div className="rounded-[30px] border border-white/70 bg-white/90 p-8 text-center space-y-3 shadow-[0_22px_60px_rgba(15,23,42,0.08)] backdrop-blur-md">
-            <h1 className="text-2xl font-bold text-gray-900">Verification Complete</h1>
-            <p className="text-gray-500 text-sm">
-              {kycData.customerInfo.fullName} - {kycData.documentResult.documentType}
+        <div className="space-y-5 animate-step-enter">
+          <div className="warm-card-strong p-8 text-center space-y-3 animate-card-rise">
+            <h1 className="text-2xl font-bold text-[var(--charcoal)]">Verification Complete</h1>
+            <p className="text-[var(--stone)] text-sm">
+              {kycData.customerInfo.fullName} — {kycData.documentResult.documentType}
             </p>
             <div className="flex justify-center pt-1">
               <DecisionBadge decision={results.decision} />
@@ -694,43 +696,42 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
           </div>
 
           {warning && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              {warning}
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+              ⚠ {warning}
             </div>
           )}
 
-          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">Risk Score</h2>
+          <div className="warm-card p-6 animate-card-rise stagger-1">
+            <h2 className="text-sm font-bold text-[var(--teal)] mb-4">Risk Score</h2>
             <RiskMeter riskScore={results.riskScore} riskCategory={results.riskCategory} />
           </div>
 
-          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">Decision Reasons</h2>
+          <div className="warm-card p-6 animate-card-rise stagger-2">
+            <h2 className="text-sm font-bold text-[var(--teal)] mb-4">Decision Reasons</h2>
             <div className="space-y-2">
               {decisionReasons.map((reason, index) => (
-                <div key={`${reason}-${index}`} className="rounded-2xl border border-slate-200 bg-slate-50/90 px-4 py-3 text-sm text-gray-700">
+                <div key={`${reason}-${index}`} className="rounded-xl border border-[var(--warm-border)] bg-[var(--cream-mid)] px-4 py-3 text-sm text-[var(--charcoal-light)] transition-all hover:bg-[var(--cream-dark)]">
                   {reason}
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">Score Breakdown</h2>
+          <div className="warm-card p-6 animate-card-rise stagger-3">
+            <h2 className="text-sm font-bold text-[var(--teal)] mb-4">Score Breakdown</h2>
             <div className="space-y-3">
               {Object.entries(BREAKDOWN_LABELS).map(([key, { label, max }]) => {
                 const value = results.breakdown[key] ?? 0
                 const pct = (value / max) * 100
-                const barColor = pct === 0 ? 'bg-green-400' : pct <= 50 ? 'bg-amber-400' : 'bg-red-500'
-
+                const barColor = pct === 0 ? 'bg-emerald-400' : pct <= 50 ? 'bg-amber-400' : 'bg-red-500'
                 return (
                   <div key={key}>
-                    <div className="flex justify-between text-xs text-gray-600 mb-1">
+                    <div className="flex justify-between text-xs text-[var(--stone)] mb-1">
                       <span>{label}</span>
-                      <span className="font-semibold">{value} / {max}</span>
+                      <span className="font-semibold text-[var(--charcoal)]">{value} / {max}</span>
                     </div>
-                    <div className="w-full bg-gray-100 rounded-full h-2">
-                      <div className={`h-2 rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+                    <div className="w-full bg-[var(--cream-dark)] rounded-full h-2">
+                      <div className={`h-2 rounded-full ${barColor} transition-all duration-700`} style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )
@@ -738,100 +739,40 @@ export default function Step4_Results({ kycData, updateKycData, resetKycData }) 
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Compliance Assessment</h2>
-            <p className="text-gray-700 text-sm leading-relaxed italic">
+          <div className="warm-card p-6 animate-card-rise stagger-4">
+            <h2 className="text-sm font-bold text-[var(--teal)] mb-3">Compliance Assessment</h2>
+            <p className="text-[var(--charcoal-light)] text-sm leading-relaxed italic">
               "{results.explanation}"
             </p>
           </div>
 
-          <div className="rounded-[28px] border border-white/70 bg-white/90 p-6 shadow-[0_18px_44px_rgba(15,23,42,0.07)] backdrop-blur-md">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Verification Summary</h2>
+          <div className="warm-card p-6 animate-card-rise stagger-5">
+            <h2 className="text-sm font-bold text-[var(--teal)] mb-3">Verification Summary</h2>
             {identityMismatchNotes.length > 0 && (
-              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-800">
-                <p className="font-medium text-amber-900">Why this went to manual review</p>
-                <div className="mt-2 space-y-1">
-                  {identityMismatchNotes.map((note) => (
-                    <p key={note}>{note}</p>
-                  ))}
-                </div>
+              <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800">
+                <p className="font-semibold">Why this went to manual review</p>
+                <div className="mt-2 space-y-1">{identityMismatchNotes.map(n => <p key={n}>{n}</p>)}</div>
               </div>
             )}
             <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-gray-500">Entered Name</p>
-                <p className="font-medium text-gray-900">{kycData.customerInfo.fullName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Entered ID Number</p>
-                <p className="font-medium text-gray-900">{kycData.customerInfo.idNumber}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Extracted Name</p>
-                <p className="font-medium text-gray-900">{kycData.documentResult.extractedName}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Document Type</p>
-                <p className="font-medium text-gray-900">{kycData.documentResult.documentType}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">ID Number</p>
-                <p className="font-medium text-gray-900">{kycData.documentResult.idNumber}</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Face Match Score</p>
-                <p className="font-medium text-gray-900">{kycData.faceResult.matchScore}%</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Liveness Check</p>
-                <p className={`font-medium ${kycData.faceResult.isLivePerson ? 'text-green-600' : 'text-red-600'}`}>
-                  {kycData.faceResult.isLivePerson ? 'Passed' : 'Failed'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Document Genuineness</p>
-                <p className={`font-medium ${documentGenuinenessLabel === 'Document Appears Genuine' ? 'text-green-600' : documentGenuinenessLabel === 'Needs Review' ? 'text-amber-600' : 'text-red-600'}`}>
-                  {documentGenuinenessLabel}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Identity Details Match</p>
-                <p className={`font-medium ${identityMatchLabel === 'Yes' ? 'text-green-600' : 'text-amber-600'}`}>
-                  {identityMatchLabel}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Name Match</p>
-                <p className={`font-medium ${nameMatchLabel === 'Yes' ? 'text-green-600' : nameMatchLabel === 'No' ? 'text-amber-600' : 'text-gray-600'}`}>
-                  {nameMatchLabel}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">ID Number Match</p>
-                <p className={`font-medium ${idNumberMatchLabel === 'Yes' ? 'text-green-600' : idNumberMatchLabel === 'No' ? 'text-amber-600' : 'text-gray-600'}`}>
-                  {idNumberMatchLabel}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Overall Verification Confidence</p>
-                <p className="font-medium text-gray-900">
-                  {overallVerificationConfidence}% <span className="text-gray-500">{overallConfidenceLabel}</span>
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Document Read Confidence</p>
-                <p className="font-medium text-gray-900">
-                  {kycData.documentResult.confidenceScore}% <span className="text-gray-500">{documentConfidenceLabel}</span>
-                </p>
-              </div>
+              <div><p className="text-xs text-[var(--stone)]">Entered Name</p><p className="font-medium text-[var(--charcoal)]">{kycData.customerInfo.fullName}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Entered ID</p><p className="font-medium text-[var(--charcoal)]">{kycData.customerInfo.idNumber}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Extracted Name</p><p className="font-medium text-[var(--charcoal)]">{kycData.documentResult.extractedName}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Document Type</p><p className="font-medium text-[var(--charcoal)]">{kycData.documentResult.documentType}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">ID Number</p><p className="font-medium text-[var(--charcoal)]">{kycData.documentResult.idNumber}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Face Match</p><p className="font-medium text-[var(--charcoal)]">{kycData.faceResult.matchScore}%</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Liveness</p><p className={`font-medium ${kycData.faceResult.isLivePerson ? 'text-emerald-600' : 'text-red-600'}`}>{kycData.faceResult.isLivePerson ? 'Passed' : 'Failed'}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Genuineness</p><p className={`font-medium ${documentGenuinenessLabel === 'Document Appears Genuine' ? 'text-emerald-600' : documentGenuinenessLabel === 'Needs Review' ? 'text-amber-600' : 'text-red-600'}`}>{documentGenuinenessLabel}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Identity Match</p><p className={`font-medium ${identityMatchLabel === 'Yes' ? 'text-emerald-600' : 'text-amber-600'}`}>{identityMatchLabel}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Name Match</p><p className={`font-medium ${nameMatchLabel === 'Yes' ? 'text-emerald-600' : nameMatchLabel === 'No' ? 'text-amber-600' : 'text-[var(--stone)]'}`}>{nameMatchLabel}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">ID Match</p><p className={`font-medium ${idNumberMatchLabel === 'Yes' ? 'text-emerald-600' : idNumberMatchLabel === 'No' ? 'text-amber-600' : 'text-[var(--stone)]'}`}>{idNumberMatchLabel}</p></div>
+              <div><p className="text-xs text-[var(--stone)]">Overall Confidence</p><p className="font-medium text-[var(--charcoal)]">{overallVerificationConfidence}% <span className="text-[var(--teal)]">{overallConfidenceLabel}</span></p></div>
+              <div><p className="text-xs text-[var(--stone)]">Doc Confidence</p><p className="font-medium text-[var(--charcoal)]">{kycData.documentResult.confidenceScore}% <span className="text-[var(--teal)]">{documentConfidenceLabel}</span></p></div>
             </div>
           </div>
 
-          <button
-            onClick={handleStartNew}
-            className="w-full rounded-2xl border-2 border-slate-950 py-3.5 text-slate-950 font-semibold transition-colors hover:bg-slate-950 hover:text-white"
-          >
-            Start New Verification
+          <button onClick={handleStartNew} className="btn-secondary w-full py-3.5 text-base font-semibold">
+            🔄 Start New Verification
           </button>
         </div>
       </div>
