@@ -198,6 +198,11 @@ function countIdentityMismatches(customerInfo, documentResult) {
 }
 
 function buildFallbackExplanation(results) {
+  const faceDecision = String(results.faceResult?.faceDecision || '').toUpperCase()
+  const faceVerificationFailed = faceDecision
+    ? faceDecision === 'NO_MATCH' || faceDecision === 'SPOOF_FAIL'
+    : results.faceResult?.verificationPassed === false
+
   if (results.decision === 'approved') {
     return `This case was approved because the document, face match, and liveness checks produced a low overall risk score of ${results.riskScore}/100. Standard onboarding can proceed without extra review.`
   }
@@ -216,6 +221,10 @@ function buildFallbackExplanation(results) {
     }
 
     return `This case requires manual review because one or more verification checks introduced moderate risk, leading to an overall score of ${results.riskScore}/100. A compliance reviewer should confirm the flagged details before proceeding.`
+  }
+
+  if (faceVerificationFailed) {
+    return `This case was rejected because the captured selfie did not match the ID portrait strongly enough. The document may still appear genuine, but the same-person face check failed and requires compliance escalation.`
   }
 
   return `This case was rejected because the verification checks produced a high overall risk score of ${results.riskScore}/100 and the evidence is not strong enough for approval. Manual compliance escalation is required before any onboarding action is taken.`
@@ -251,16 +260,22 @@ function mergeConservativeResults(localResults, apiResults) {
     decision,
     explanation,
     breakdown,
+    faceResult: localResults.faceResult || apiResults.faceResult,
     faceReviewHint: localResults.faceReviewHint || apiResults.faceReviewHint || ''
   }
 }
 
 function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk) {
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
   const score = Number(faceResult.matchScore) || 0
   const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
   const faceUncertain = faceResult.faceUncertain === true
+  const verificationPassed = faceResult.verificationPassed === true
   const idPhotoClarity = String(faceResult.idPhotoClarity || documentResult.idPhotoClarity || '').toLowerCase()
   const documentConfidence = Number(documentResult.confidenceScore) || 0
+  const shouldRejectAsDifferentPerson = faceResult.shouldRejectAsDifferentPerson === true
+  const featureMismatchCount = Number(faceResult.featureMismatchCount) || 0
+  const featureAgreementCount = Number(faceResult.featureAgreementCount) || 0
   const documentLooksStrong =
     documentResult.tamperingDetected !== true &&
     (
@@ -269,6 +284,7 @@ function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk,
     )
 
   return (
+    (faceDecision === 'REVIEW' || verificationPassed) &&
     (faceUncertain || ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)) &&
     score >= 55 &&
     score < 72 &&
@@ -276,6 +292,9 @@ function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk,
     dataConsistencyRisk === 0 &&
     livenessRisk === 0 &&
     documentLooksStrong &&
+    !shouldRejectAsDifferentPerson &&
+    featureMismatchCount <= 1 &&
+    featureAgreementCount >= 3 &&
     ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)
   )
 }
@@ -305,6 +324,7 @@ function calculateDocumentAuthenticityRisk(documentResult, supportingSignals = {
   }
 
   if (hasStrongSupport && documentConfidence >= 35) return 0
+  if (hasModerateSupport && documentConfidence >= 35) return 8
 
   if (documentConfidence < 45) risk += 10
   else if (documentConfidence < 65) risk += 5
@@ -317,12 +337,16 @@ function calculateLocalResults(kycData) {
   const faceResult = kycData.faceResult || {}
   const customerInfo = kycData.customerInfo || {}
   const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
 
   const matchScore = Number(faceResult.matchScore) || 0
   const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
   const faceUncertain = faceResult.faceUncertain === true
   const verificationPassed = faceResult.verificationPassed === true
   const idPhotoClarity = String(faceResult.idPhotoClarity || '').toLowerCase()
+  const shouldRejectAsDifferentPerson = faceResult.shouldRejectAsDifferentPerson === true
+  const featureMismatchCount = Number(faceResult.featureMismatchCount) || 0
+  const featureAgreementCount = Number(faceResult.featureAgreementCount) || 0
 
   const expiryDate = documentResult.expiryDate
   let expiryRisk = 8
@@ -369,13 +393,21 @@ function calculateLocalResults(kycData) {
 
   const borderlineFaceReview = isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk)
   let faceMatchRisk = 30
-  if (borderlineFaceReview) faceMatchRisk = 15
+  if (faceDecision === 'SPOOF_FAIL' || faceDecision === 'NO_MATCH') faceMatchRisk = 30
+  else if (faceDecision === 'RECAPTURE') faceMatchRisk = 20
+  else if (faceDecision === 'REVIEW') faceMatchRisk = 15
+  else if (shouldRejectAsDifferentPerson || featureMismatchCount >= 3) faceMatchRisk = 30
+  else if (faceResult.verificationPassed === false && !borderlineFaceReview) faceMatchRisk = 25
+  else if (borderlineFaceReview) faceMatchRisk = 15
+  else if (verificationPassed && featureMismatchCount >= 2) faceMatchRisk = 20
   else if (verificationPassed && faceUncertain) faceMatchRisk = 12
   else if (verificationPassed === false && samePersonConfidence > 0 && samePersonConfidence < 45) faceMatchRisk = 30
   else if (matchScore < 72 && samePersonConfidence > 0 && samePersonConfidence < 55) faceMatchRisk = 30
   else if (verificationPassed === false && matchScore < 72) faceMatchRisk = 25
+  else if (faceUncertain && featureMismatchCount >= 2) faceMatchRisk = 25
   else if (faceUncertain && (idPhotoClarity === 'too_small' || idPhotoClarity === 'unclear')) faceMatchRisk = 20
   else if (faceUncertain) faceMatchRisk = 12
+  else if (verificationPassed && featureAgreementCount >= 4 && samePersonConfidence >= 78 && matchScore >= 80) faceMatchRisk = 0
   else if (matchScore >= 85) faceMatchRisk = 0
   else if (matchScore >= 72) faceMatchRisk = 5
   else if (matchScore >= 55) faceMatchRisk = 25
@@ -437,6 +469,18 @@ function calculateLocalResults(kycData) {
     decision = 'rejected'
   }
 
+  if ((faceDecision === 'NO_MATCH' || faceDecision === 'SPOOF_FAIL') || (!faceDecision && faceResult.verificationPassed === false)) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
+  if (shouldRejectAsDifferentPerson || featureMismatchCount >= 3) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
   if (!verificationPassed && ((samePersonConfidence > 0 && samePersonConfidence < 45) || (!faceUncertain && matchScore < 60))) {
     riskScore = Math.max(riskScore, 75)
     riskCategory = 'high'
@@ -461,6 +505,7 @@ function calculateLocalResults(kycData) {
     decision,
     faceReviewHint: borderlineFaceReview ? 'possible_age_or_photo_gap' : '',
     documentConfidenceScore: Number(documentResult.confidenceScore) || 0,
+    faceResult,
     breakdown: {
       documentAuthenticityRisk,
       faceMatchRisk,
@@ -479,12 +524,20 @@ function calculateLocalResults(kycData) {
 function buildDecisionReasons(results) {
   const reasons = []
   const { breakdown, decision } = results
+  const strongDifferentPersonSignal =
+    results.faceResult?.shouldRejectAsDifferentPerson === true ||
+    (Number(results.faceResult?.featureMismatchCount) || 0) >= 3
+  const faceDecision = String(results.faceResult?.faceDecision || '').toUpperCase()
+  const faceVerificationFailed = faceDecision
+    ? faceDecision === 'NO_MATCH' || faceDecision === 'SPOOF_FAIL'
+    : results.faceResult?.verificationPassed === false
 
   if (breakdown.documentAuthenticityRisk >= 15) reasons.push('Document authenticity checks raised serious concerns.')
   else if (breakdown.documentAuthenticityRisk > 0) reasons.push('Document confidence was lower than expected.')
   else reasons.push('Document authenticity checks were strong.')
 
-  if (breakdown.faceMatchRisk >= 15) reasons.push('Face matching showed a weak or uncertain similarity with the ID photo.')
+  if (strongDifferentPersonSignal || faceVerificationFailed) reasons.push('Face matching found strong different-person signals between the ID photo and the captured selfie.')
+  else if (breakdown.faceMatchRisk >= 15) reasons.push('Face matching showed a weak or uncertain similarity with the ID photo.')
   else if (breakdown.faceMatchRisk > 0) reasons.push('Face matching was acceptable but not fully conclusive.')
   else reasons.push('Face matching strongly supported the same-person check.')
 
@@ -527,6 +580,10 @@ function calculateOverallVerificationConfidence(results) {
   const consistencyRisk = results.breakdown?.dataConsistencyRisk || 0
   const livenessRisk = results.breakdown?.livenessRisk || 0
   const documentConfidence = Number(results.documentConfidenceScore) || 0
+  const faceDecision = String(results.faceResult?.faceDecision || '').toUpperCase()
+  const faceVerificationFailed = faceDecision
+    ? faceDecision === 'NO_MATCH' || faceDecision === 'SPOOF_FAIL'
+    : results.faceResult?.verificationPassed === false
 
   const documentStrength = documentConfidence
   const consistencyStrength = Math.max(0, 100 - Math.round((consistencyRisk / 15) * 100))
@@ -549,13 +606,31 @@ function calculateOverallVerificationConfidence(results) {
 
   if (faceRisk >= 25) confidence = Math.min(confidence, 18)
   else if (faceRisk >= 20) confidence = Math.min(confidence, 38)
-  else if (faceRisk >= 12) confidence = Math.min(confidence, 55)
+  else if (faceRisk >= 12) confidence = Math.min(confidence, 62)
+
+  if (faceVerificationFailed) confidence = Math.min(confidence, 20)
 
   if (documentRisk >= 15) confidence = Math.min(confidence, 55)
   else if (documentRisk > 0) confidence = Math.min(confidence, Math.max(documentConfidence + 10, 70))
 
   if (documentConfidence < 50) confidence = Math.min(confidence, 78)
   else if (documentConfidence < 60) confidence = Math.min(confidence, 84)
+
+  const isCleanApprovedCase =
+    results.decision === 'approved' &&
+    consistencyRisk === 0 &&
+    livenessRisk === 0 &&
+    documentRisk <= 8
+
+  if (isCleanApprovedCase && faceRisk <= 12) {
+    const cleanApprovedFloor = Math.round(
+      Math.min(
+        86,
+        62 + ((100 - riskScore) * 0.12) + (Math.max(documentConfidence, 50) * 0.08)
+      )
+    )
+    confidence = Math.max(confidence, cleanApprovedFloor)
+  }
 
   const isStrongApprovedCase =
     results.decision === 'approved' &&

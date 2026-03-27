@@ -1,9 +1,13 @@
 function calculateRiskScore(documentResult, faceResult, customerInfo) {
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
   const identityMismatchCount = countIdentityMismatches(customerInfo, documentResult)
   const dataConsistencyRisk = calcDataConsistencyRisk(customerInfo, documentResult)
   const borderlineFaceReview = isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, calcLivenessRisk(faceResult))
   const faceMatchRisk = calcFaceMatchRisk(faceResult, borderlineFaceReview)
   const severeFaceMismatch = isSevereFaceMismatch(faceResult)
+  const faceVerificationFailed = faceDecision
+    ? ['NO_MATCH', 'SPOOF_FAIL'].includes(faceDecision)
+    : faceResult.verificationPassed === false
   const livenessRisk = calcLivenessRisk(faceResult)
   const documentAuthenticityRisk = calcDocumentRisk(documentResult, {
     dataConsistencyRisk,
@@ -67,6 +71,12 @@ function calculateRiskScore(documentResult, faceResult, customerInfo) {
     decision = 'rejected'
   }
 
+  if (faceVerificationFailed) {
+    riskScore = Math.max(riskScore, 75)
+    riskCategory = 'high'
+    decision = 'rejected'
+  }
+
   if (severeFaceMismatch) {
     riskScore = Math.max(riskScore, 75)
     riskCategory = 'high'
@@ -116,6 +126,7 @@ function calcDocumentRisk(documentResult, supportingSignals = {}) {
   }
 
   if (hasStrongSupport && confidence >= 35) return 0
+  if (hasModerateSupport && confidence >= 35) return 8
 
   if (confidence < 45) risk += 10
   else if (confidence < 65) risk += 5
@@ -124,19 +135,31 @@ function calcDocumentRisk(documentResult, supportingSignals = {}) {
 }
 
 function calcFaceMatchRisk(faceResult, borderlineFaceReview = false) {
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
   const score = Number(faceResult.matchScore) || 0
   const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
   const faceUncertain = faceResult.faceUncertain === true
   const verificationPassed = faceResult.verificationPassed === true
   const idPhotoClarity = String(faceResult.idPhotoClarity || '').toLowerCase()
+  const shouldRejectAsDifferentPerson = faceResult.shouldRejectAsDifferentPerson === true
+  const featureMismatchCount = Number(faceResult.featureMismatchCount) || 0
+  const featureAgreementCount = Number(faceResult.featureAgreementCount) || 0
 
+  if (faceDecision === 'SPOOF_FAIL' || faceDecision === 'NO_MATCH') return 30
+  if (faceDecision === 'RECAPTURE') return 20
+  if (faceDecision === 'REVIEW') return 15
+  if (shouldRejectAsDifferentPerson || featureMismatchCount >= 3) return 30
+  if (faceResult.verificationPassed === false && !borderlineFaceReview) return 25
   if (borderlineFaceReview) return 15
+  if (verificationPassed && featureMismatchCount >= 2) return 20
   if (verificationPassed && faceUncertain) return 12
   if (verificationPassed === false && samePersonConfidence > 0 && samePersonConfidence < 45) return 30
   if (score < 72 && samePersonConfidence > 0 && samePersonConfidence < 55) return 30
   if (verificationPassed === false && score < 72) return 25
+  if (faceUncertain && featureMismatchCount >= 2) return 25
   if (faceUncertain && (idPhotoClarity === 'too_small' || idPhotoClarity === 'unclear')) return 20
   if (faceUncertain) return 12
+  if (verificationPassed && featureAgreementCount >= 4 && samePersonConfidence >= 78 && score >= 80) return 0
   if (score >= 85) return 0
   if (score >= 72) return 5
   if (score >= 55) return 25
@@ -144,12 +167,18 @@ function calcFaceMatchRisk(faceResult, borderlineFaceReview = false) {
 }
 
 function isSevereFaceMismatch(faceResult) {
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
   const score = Number(faceResult.matchScore) || 0
   const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
   const verificationPassed = faceResult.verificationPassed === true
   const faceUncertain = faceResult.faceUncertain === true
+  const shouldRejectAsDifferentPerson = faceResult.shouldRejectAsDifferentPerson === true
+  const featureMismatchCount = Number(faceResult.featureMismatchCount) || 0
 
+  if (faceDecision === 'REVIEW' || faceDecision === 'RECAPTURE') return false
   if (verificationPassed) return false
+  if (faceDecision === 'NO_MATCH' || faceDecision === 'SPOOF_FAIL') return true
+  if (shouldRejectAsDifferentPerson || featureMismatchCount >= 3) return true
   if (samePersonConfidence > 0 && samePersonConfidence < 45) return true
   if (score < 72 && samePersonConfidence > 0 && samePersonConfidence < 55 && !faceUncertain) return true
   if (!faceUncertain && score < 60) return true
@@ -157,11 +186,16 @@ function isSevereFaceMismatch(faceResult) {
 }
 
 function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk, livenessRisk) {
+  const faceDecision = String(faceResult.faceDecision || '').toUpperCase()
   const score = Number(faceResult.matchScore) || 0
   const samePersonConfidence = Number(faceResult.samePersonConfidence) || 0
   const faceUncertain = faceResult.faceUncertain === true
+  const verificationPassed = faceResult.verificationPassed === true
   const idPhotoClarity = String(faceResult.idPhotoClarity || documentResult.idPhotoClarity || '').toLowerCase()
   const documentConfidence = Number(documentResult.confidenceScore) || 0
+  const shouldRejectAsDifferentPerson = faceResult.shouldRejectAsDifferentPerson === true
+  const featureMismatchCount = Number(faceResult.featureMismatchCount) || 0
+  const featureAgreementCount = Number(faceResult.featureAgreementCount) || 0
   const documentLooksStrong =
     documentResult.tamperingDetected !== true &&
     (
@@ -170,6 +204,7 @@ function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk,
     )
 
   return (
+    (faceDecision === 'REVIEW' || verificationPassed) &&
     (faceUncertain || ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)) &&
     score >= 55 &&
     score < 72 &&
@@ -177,6 +212,9 @@ function isBorderlineFaceReview(faceResult, documentResult, dataConsistencyRisk,
     dataConsistencyRisk === 0 &&
     livenessRisk === 0 &&
     documentLooksStrong &&
+    !shouldRejectAsDifferentPerson &&
+    featureMismatchCount <= 1 &&
+    featureAgreementCount >= 3 &&
     ['slightly_unclear', 'unclear', 'too_small'].includes(idPhotoClarity)
   )
 }

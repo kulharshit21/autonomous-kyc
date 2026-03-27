@@ -5,7 +5,7 @@ import FaceVerificationChecklistLoader from '../components/FaceVerificationCheck
 import LivenessCheck from '../components/LivenessCheck'
 import StepCanvas from '../components/StepCanvas'
 import { apiClient } from '../utils/apiClient'
-import { enhanceImageForVerification } from '../utils/imageUtils'
+import { enhanceImageForVerification, selectBestVerificationFrames } from '../utils/imageUtils'
 
 export default function Step3_FaceVerification({ kycData, updateKycData }) {
   const navigate = useNavigate()
@@ -16,6 +16,10 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
   const [selfieBase64, setSelfieBase64] = useState('')
   const [selfiePreviewURL, setSelfiePreviewURL] = useState('')
   const [livenessFrames, setLivenessFrames] = useState([])
+  const [supportFrames, setSupportFrames] = useState([])
+  const [frameQualityScores, setFrameQualityScores] = useState([])
+  const [primaryFrameStep, setPrimaryFrameStep] = useState('')
+  const [primaryFrameQualityScore, setPrimaryFrameQualityScore] = useState(0)
   const [faceResult, setFaceResult] = useState(null)
   const [cameraError, setCameraError] = useState('')
   const [error, setError] = useState('')
@@ -57,10 +61,17 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
     setStage('liveness')
   }
 
-  const handleLivenessDone = useCallback((selfie, frames) => {
-    setSelfieBase64(selfie)
-    setSelfiePreviewURL(`data:image/jpeg;base64,${selfie}`)
+  const handleLivenessDone = useCallback(async (selfie, frames) => {
+    const selection = await selectBestVerificationFrames(frames)
+    const primaryFrame = selection.primaryFrame || selfie
+
+    setSelfieBase64(primaryFrame)
+    setSelfiePreviewURL(`data:image/jpeg;base64,${primaryFrame}`)
     setLivenessFrames(frames)
+    setSupportFrames(selection.supportFrames)
+    setFrameQualityScores(selection.frameQualityScores)
+    setPrimaryFrameStep(selection.primaryFrameStep || '')
+    setPrimaryFrameQualityScore(selection.primaryFrameQualityScore || 0)
     stopCamera()
     setStage('preview')
   }, [])
@@ -80,11 +91,18 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
       setStage('verifying'); setError('')
       const eId = await enhanceImageForVerification(idImageBase64, { minDimension: 1400, brightness: 1.03, contrast: 1.12, saturate: 1.03, quality: 0.95 })
       const eSelf = await enhanceImageForVerification(selfieBase64, { minDimension: 1200, brightness: 1.03, contrast: 1.1, saturate: 1.02, quality: 0.95 })
-      // Send all liveness frames alongside primary selfie for better verification
+      const enhancedFrames = await Promise.all(
+        livenessFrames.slice(0, 6).map(frame =>
+          enhanceImageForVerification(frame, { minDimension: 960, brightness: 1.02, contrast: 1.08, saturate: 1.02, quality: 0.9 })
+        )
+      )
       const result = await apiClient.post('/api/kyc/verify-face', {
         idImageBase64: eId,
         selfieBase64: eSelf,
-        livenessFrames: livenessFrames
+        livenessFrames: enhancedFrames,
+        liveFrameQualityScores: frameQualityScores,
+        primaryFrameStep,
+        primaryFrameQualityScore
       })
       setFaceResult(result)
       setStage('result')
@@ -92,12 +110,34 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
   }
 
   const handleConfirm = () => {
-    updateKycData({ faceResult: { matchScore: faceResult.matchScore, isLivePerson: faceResult.isLivePerson, livenessConfidence: faceResult.livenessConfidence, verificationPassed: faceResult.verificationPassed, faceUncertain: faceResult.faceUncertain, idPhotoClarity: faceResult.idPhotoClarity, selfieClarity: faceResult.selfieClarity, samePersonConfidence: faceResult.samePersonConfidence, selfieBase64, livenessFrameCount: livenessFrames.length } })
+    updateKycData({
+      faceResult: {
+        matchScore: faceResult.matchScore,
+        isLivePerson: faceResult.isLivePerson,
+        livenessConfidence: faceResult.livenessConfidence,
+        faceDecision: faceResult.faceDecision,
+        verificationPassed: faceResult.verificationPassed,
+        faceUncertain: faceResult.faceUncertain,
+        idPhotoClarity: faceResult.idPhotoClarity,
+        selfieClarity: faceResult.selfieClarity,
+        samePersonConfidence: faceResult.samePersonConfidence,
+        shouldRejectAsDifferentPerson: faceResult.shouldRejectAsDifferentPerson,
+        featureLikelihood: faceResult.featureLikelihood,
+        featureAgreementCount: faceResult.featureAgreementCount,
+        featureMismatchCount: faceResult.featureMismatchCount,
+        perFrameSimilarityScores: faceResult.perFrameSimilarityScores || [],
+        fusedMatchScore: faceResult.fusedMatchScore || faceResult.matchScore,
+        liveSessionLivenessScore: faceResult.liveSessionLivenessScore || faceResult.livenessConfidence,
+        liveFrameQualityScores: frameQualityScores,
+        selfieBase64,
+        livenessFrameCount: livenessFrames.length
+      }
+    })
     navigate('/step/4')
   }
 
   const handleRetake = () => {
-    setSelfieBase64(''); setSelfiePreviewURL(''); setFaceResult(null); setLivenessFrames([]); setError(''); setCameraError('')
+    setSelfieBase64(''); setSelfiePreviewURL(''); setFaceResult(null); setLivenessFrames([]); setSupportFrames([]); setFrameQualityScores([]); setPrimaryFrameStep(''); setPrimaryFrameQualityScore(0); setError(''); setCameraError('')
     setStage('idle')
   }
 
@@ -184,7 +224,13 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
               </div>
               <div className="text-center">
                 <p className="text-sm font-semibold text-[var(--charcoal)]">Liveness check passed</p>
-                <p className="text-xs text-[var(--stone)]">{livenessFrames.length} frames captured during challenges</p>
+                <p className="text-xs text-[var(--stone)]">{livenessFrames.length} frames captured. Best frontal frame selected automatically for matching.</p>
+                {primaryFrameStep && (
+                  <p className="mt-1 text-[11px] text-[var(--stone)]">
+                    Primary match frame: <span className="font-semibold capitalize text-[var(--charcoal)]">{primaryFrameStep}</span>
+                    {primaryFrameQualityScore > 0 ? ` · Quality ${primaryFrameQualityScore}` : ''}
+                  </p>
+                )}
               </div>
               {error && <div className="w-full rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{error}</div>}
               <div className="flex w-full gap-3">
@@ -205,7 +251,17 @@ export default function Step3_FaceVerification({ kycData, updateKycData }) {
           {stage === 'result' && faceResult && (
             <div className="space-y-5 animate-card-rise">
               <div className="warm-card p-5">
-                <FaceCompare idImageBase64={idImageBase64} selfieBase64={selfieBase64} matchScore={faceResult.matchScore} verificationPassed={faceResult.verificationPassed} faceUncertain={faceResult.faceUncertain} idPhotoClarity={faceResult.idPhotoClarity} selfieClarity={faceResult.selfieClarity} />
+                <FaceCompare
+                  idImageBase64={idImageBase64}
+                  selfieBase64={selfieBase64}
+                  matchScore={faceResult.matchScore}
+                  faceDecision={faceResult.faceDecision}
+                  verificationPassed={faceResult.verificationPassed}
+                  faceUncertain={faceResult.faceUncertain}
+                  idPhotoClarity={faceResult.idPhotoClarity}
+                  selfieClarity={faceResult.selfieClarity}
+                  shouldRejectAsDifferentPerson={faceResult.shouldRejectAsDifferentPerson}
+                />
               </div>
               {faceResult.reasoning && (
                 <div className="warm-card px-4 py-3 text-sm text-[var(--charcoal-light)]">

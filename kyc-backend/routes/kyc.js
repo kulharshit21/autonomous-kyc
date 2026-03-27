@@ -85,7 +85,14 @@ router.post('/verify-document', async (req, res) => {
 // POST /api/kyc/verify-face
 router.post('/verify-face', async (req, res) => {
   try {
-    const { idImageBase64, selfieBase64, livenessFrames } = req.body
+    const {
+      idImageBase64,
+      selfieBase64,
+      livenessFrames,
+      liveFrameQualityScores,
+      primaryFrameStep,
+      primaryFrameQualityScore
+    } = req.body
 
     if (!idImageBase64 || !selfieBase64) {
       return res.status(400).json({ success: false, error: 'idImageBase64 and selfieBase64 are required' })
@@ -103,7 +110,26 @@ router.post('/verify-face', async (req, res) => {
       ? livenessFrames.filter(f => typeof f === 'string' && isValidBase64(f))
       : []
 
-    const faceResult = await verifyFace(idImageBase64, selfieBase64, validFrames)
+    const validFrameQualityScores = Array.isArray(liveFrameQualityScores)
+      ? liveFrameQualityScores
+          .filter(item => item && typeof item === 'object')
+          .map(item => ({
+            step: sanitiseString(item.step || ''),
+            brightness: Number(item.brightness) || 0,
+            contrast: Number(item.contrast) || 0,
+            sharpness: Number(item.sharpness) || 0,
+            qualityScore: Number(item.qualityScore) || 0
+          }))
+      : []
+
+    const faceResult = await verifyFace(
+      idImageBase64,
+      selfieBase64,
+      validFrames,
+      validFrameQualityScores,
+      sanitiseString(primaryFrameStep || ''),
+      Number(primaryFrameQualityScore) || 0
+    )
     res.json({ success: true, data: faceResult })
 
   } catch (error) {
