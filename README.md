@@ -7,7 +7,7 @@ The app supports:
 - Aadhaar, PAN, passport, and driving licence uploads
 - image and PDF document verification
 - multi-image document uploads
-- face match and liveness verification
+- face match and liveness verification.
 - risk scoring with a compliance-style result summary
 
 ## Stack
