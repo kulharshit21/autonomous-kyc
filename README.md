@@ -1,151 +1,181 @@
-# Autonomous KYC
+<div align="center">
 
-Autonomous KYC is a full-stack identity verification demo that combines document analysis, selfie verification, and risk scoring in a guided onboarding flow.
+<img src="https://capsule-render.vercel.app/api?type=waving&height=220&color=0:0f172a,50:2563eb,100:14b8a6&text=Autonomous%20KYC&fontSize=48&fontColor=ffffff&fontAlignY=38&desc=AI-Powered%20Identity%20Verification%20Workflow&descAlignY=58&animation=fadeIn" width="100%" />
 
-The app supports:
-- customer information capture
-- Aadhaar, PAN, passport, and driving licence uploads
-- image and PDF document verification
-- multi-image document uploads
-- face match and liveness verification.
-- risk scoring with a compliance-style result summary
+<br/>
 
-## Stack
+<img src="https://readme-typing-svg.demolab.com?font=Inter&weight=700&size=23&duration=2500&pause=900&color=14B8A6&center=true&vCenter=true&multiline=true&width=1000&height=90&lines=Document+Analysis+%E2%80%A2+Face+Verification+%E2%80%A2+Risk+Scoring;Aadhaar+%E2%80%A2+PAN+%E2%80%A2+Passport+%E2%80%A2+Driving+Licence;React+%E2%80%A2+Vite+%E2%80%A2+Node.js+%E2%80%A2+Express+%E2%80%A2+Mistral+Pixtral" alt="Typing SVG" />
 
-- Frontend: React, Vite, Tailwind CSS
-- Backend: Node.js, Express
-- Vision model: Mistral Pixtral
-- Text explanation: Mistral text model
-- Legacy fallback kept in repo: Ollama services
+<br/>
 
-## Project Structure
+<p align="center">
+  <a href="https://github.com/kulharshit21/autonomous-kyc/stargazers">
+    <img src="https://img.shields.io/github/stars/kulharshit21/autonomous-kyc?style=for-the-badge&logo=github&color=2563eb" />
+  </a>
+  <a href="https://github.com/kulharshit21/autonomous-kyc/network/members">
+    <img src="https://img.shields.io/github/forks/kulharshit21/autonomous-kyc?style=for-the-badge&logo=github&color=14b8a6" />
+  </a>
+  <a href="https://github.com/kulharshit21/autonomous-kyc/issues">
+    <img src="https://img.shields.io/github/issues/kulharshit21/autonomous-kyc?style=for-the-badge&logo=github&color=f59e0b" />
+  </a>
+  <a href="https://github.com/kulharshit21/autonomous-kyc/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/kulharshit21/autonomous-kyc?style=for-the-badge&color=22c55e" />
+  </a>
+</p>
 
-```text
-autonomous-kyc/
-  kyc-backend/
-  kyc-frontend/
-```
+<p align="center">
+  <img src="https://img.shields.io/badge/Frontend-React-61DAFB?style=flat-square&logo=react&logoColor=black" />
+  <img src="https://img.shields.io/badge/Build-Vite-646CFF?style=flat-square&logo=vite&logoColor=white" />
+  <img src="https://img.shields.io/badge/Backend-Node.js-339933?style=flat-square&logo=node.js&logoColor=white" />
+  <img src="https://img.shields.io/badge/API-Express-000000?style=flat-square&logo=express&logoColor=white" />
+  <img src="https://img.shields.io/badge/Styling-Tailwind-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vision-Mistral%20Pixtral-7c3aed?style=flat-square" />
+  <img src="https://img.shields.io/badge/Text%20Reasoning-Mistral-0ea5e9?style=flat-square" />
+</p>
 
-- [kyc-backend](d:/per/autonomous-kyc/kyc-backend) contains the API, document conversion, model calls, and risk engine.
-- [kyc-frontend](d:/per/autonomous-kyc/kyc-frontend) contains the multi-step KYC interface.
+<h3>Full-stack identity verification demo with guided onboarding, document intelligence, selfie matching, liveness, and compliance-style risk scoring.</h3>
 
-## Features
+<p align="center">
+  <a href="#-preview">Preview</a> •
+  <a href="#-features">Features</a> •
+  <a href="#-stack">Stack</a> •
+  <a href="#-architecture">Architecture</a> •
+  <a href="#-verification-flow">Verification Flow</a> •
+  <a href="#-local-setup">Local Setup</a> •
+  <a href="#-security">Security</a>
+</p>
 
+</div>
+
+---
+
+## ✨ Preview
+
+<div align="center">
+
+> Replace these placeholders with your actual screenshots / GIFs
+
+| Onboarding | Document Verification | Risk Result |
+|---|---|---|
+| ![Step 1](https://placehold.co/600x340/0f172a/ffffff?text=Customer+Information) | ![Step 2](https://placehold.co/600x340/111827/ffffff?text=Document+Analysis) | ![Step 3](https://placehold.co/600x340/0b1220/ffffff?text=Risk+Summary) |
+
+</div>
+
+<br/>
+
+<div align="center">
+
+### 🎥 Demo Walkthrough
+<img src="https://placehold.co/1000x500/0f172a/ffffff?text=Add+your+demo+GIF+or+video+preview+here" alt="Autonomous KYC Demo" />
+
+</div>
+
+---
+
+## 🧠 About The Project
+
+**Autonomous KYC** is a full-stack identity verification demo that combines:
+
+- document analysis
+- selfie verification
+- liveness verification
+- guided onboarding
+- rule-based risk scoring
+- compliance-style decision summaries
+
+It is built to simulate a modern KYC pipeline where users can upload identity documents, verify themselves through a live capture flow, and receive a final review outcome such as **approve**, **review**, or **reject**.
+
+---
+
+## 🚀 Features
+
+<table>
+<tr>
+<td width="50%">
+
+### 📄 Document Intelligence
 - Upload one or more document images
-- Upload PDF documents and convert them to images for vision processing
+- Upload PDF files and convert them into images
+- Support for multi-image document flows
 - Extract name, DOB, ID number, expiry, and document type
-- Compare selfie against the document photo
+- Run document-read and authenticity checks
+
+</td>
+<td width="50%">
+
+### 🧍 Identity Verification
+- Capture live selfie
+- Compare selfie with document photo
 - Run liveness checks
-- Score risk based on authenticity, face match, expiry, consistency, and liveness
-- Show decision reasons for approve, review, or reject outcomes
-- Use a verification checklist animation during document analysis
+- Reduce spoofing risk in onboarding
+- Guided verification checklist animation
 
-## Local Setup
+</td>
+</tr>
+<tr>
+<td width="50%">
 
-### 1. Clone the repo
+### ⚖️ Risk Engine
+- Risk score generation
+- Authenticity-based reasoning
+- Face match evaluation
+- Expiry and consistency checks
+- Approve / review / reject style outcomes
 
-```bash
-git clone https://github.com/kulharshit21/autonomous-kyc.git
-cd autonomous-kyc
-```
+</td>
+<td width="50%">
 
-### 2. Install backend dependencies
+### 💻 Developer-Friendly
+- Separate frontend and backend
+- Node.js + Express API layer
+- React + Vite multi-step interface
+- Mistral-powered document understanding
+- Ollama fallback kept in repo
 
-```bash
-cd kyc-backend
-npm install
-```
+</td>
+</tr>
+</table>
 
-### 3. Install frontend dependencies
+---
 
-```bash
-cd ../kyc-frontend
-npm install
-```
+## 🛂 Supported Documents
 
-## Environment Variables
+- Aadhaar
+- PAN
+- Passport
+- Driving Licence
 
-Create `kyc-backend/.env` from `kyc-backend/.env.example`.
+---
 
-Expected variables:
-
-```env
-MISTRAL_API_KEY=your_mistral_api_key
-MISTRAL_TEXT_MODEL=mistral-small-latest
-PORT=3001
-NODE_ENV=development
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=llama3.2
-OLLAMA_VISION_MODEL=llama3.2-vision
-```
-
-Notes:
-- Do not commit `.env` files or API keys.
-- Ollama remains in the repo, but the main active explanation flow uses Mistral.
-
-## Run the App
-
-### Backend
-
-```bash
-cd kyc-backend
-npm run dev
-```
+## 🧰 Stack
 
 ### Frontend
+- React
+- Vite
+- Tailwind CSS
 
-```bash
-cd kyc-frontend
-npm run dev
-```
+### Backend
+- Node.js
+- Express
 
-Default local URLs:
-- Frontend: `http://localhost:5173`
-- Backend: `http://localhost:3001`
+### AI / Model Layer
+- **Vision model:** Mistral Pixtral
+- **Text explanation:** Mistral text model
+- **Legacy fallback in repo:** Ollama services
 
-## Verification Flow
+---
 
-1. Enter customer information including name, DOB, and ID number
-2. Upload one or more document images or a PDF
-3. Convert PDFs to images when needed
-4. Analyze the document with Mistral Pixtral
-5. Extract identity fields and authenticity signals
-6. Capture a live selfie
-7. Compare the selfie with the document photo
-8. Generate a final risk score and compliance explanation
+## 🏗️ Architecture
 
-## Important Notes
-
-- The displayed document score is a document-read confidence, not overall approval confidence.
-- A document can appear genuine while the entered identity details still mismatch and trigger manual review.
-- For best camera reliability, use Chrome or Edge on `localhost`.
-
-## Build
-
-Frontend production build:
-
-```bash
-cd kyc-frontend
-npm run build
-```
-
-Backend production run:
-
-```bash
-cd kyc-backend
-npm start
-```
-
-## Security
-
-- `.env` files are ignored by Git
-- `node_modules` and frontend build output are ignored by Git
-- If any credentials were ever exposed locally, rotate them before using the project in production
-
-## Roadmap Ideas
-
-- stronger document-type-specific extraction rules
-- audit logs for reviewer actions
-- deployment configuration
-- webhook or queue-based processing
-- admin review dashboard
+```mermaid
+flowchart LR
+    A[User Enters Customer Info] --> B[Upload Document Images / PDF]
+    B --> C[Backend Receives Files]
+    C --> D[PDF to Image Conversion]
+    D --> E[Mistral Pixtral Document Analysis]
+    E --> F[Field Extraction + Authenticity Signals]
+    F --> G[Live Selfie Capture]
+    G --> H[Face Match + Liveness Checks]
+    H --> I[Risk Engine]
+    I --> J[Compliance-Style Summary]
+    J --> K[Approve / Review / Reject]
